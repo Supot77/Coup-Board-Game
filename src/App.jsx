@@ -42,23 +42,22 @@ function App() {
 
   return (
     <>
-      {/* ปุ่มเปิดกติกา (ซ่อนตอนอยู่หน้าล็อกอิน) */}
-      {currentView !== 'login' && (
-        <button 
-          onClick={() => setShowRules(true)} 
-          style={{ position: 'fixed', top: '10px', right: '10px', backgroundColor: 'var(--gold)', color: 'var(--navy)', padding: '5px 10px', zIndex: 999 }}
-        >
-          📖 กติกา
-        </button>
-      )}
-
       {/* หน้าต่างกติกา */}
       {showRules && <RulesModal onClose={() => setShowRules(false)} />}
 
       {/* ควบคุมการแสดงผลหน้าจอหลัก */}
       {currentView === 'login' && <Login onLoginSuccess={handleLoginSuccess} />}
       {currentView === 'lobby' && <Lobby user={user} onLogout={handleLogout} onGameStart={handleGameStart} />}
-      {currentView === 'game' && <GameBoard roomCode={playingRoomCode} user={user} onLeaveGame={() => setCurrentView('lobby')} />}
+      
+      {/* ส่ง onShowRules เข้าไปใน GameBoard ด้วย */}
+      {currentView === 'game' && (
+        <GameBoard 
+          roomCode={playingRoomCode} 
+          user={user} 
+          onLeaveGame={() => setCurrentView('lobby')} 
+          onShowRules={() => setShowRules(true)} 
+        />
+      )}
     </>
   );
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import './Login.css';
 
 export default function Login({ onLoginSuccess }) {
   const [username, setUsername] = useState("");
@@ -9,8 +10,6 @@ export default function Login({ onLoginSuccess }) {
   }, []);
 
   const handleLogin = () => {
-    console.log("👉 เช็คการกดปุ่ม! ชื่อที่พิมพ์คือ:", username);
-
     if (!username.trim()) {
       alert("กรุณาใส่ชื่อของคุณก่อนเข้าเล่นครับ!");
       return;
@@ -27,17 +26,30 @@ export default function Login({ onLoginSuccess }) {
   };
 
   return (
-    <div className="view-container">
-      <h1>เข้าสู่ระบบ Coup</h1>
-      <input 
-        type="text" 
-        placeholder="ใส่ชื่อของคุณ" 
-        value={username}
-        onChange={(e) => setUsername(e.target.value)} 
-        onKeyDown={(e) => e.key === 'Enter' && handleLogin()} 
-      />
-      <br />
-      <button className="primary" onClick={handleLogin}>เข้าสู่ล็อบบี้</button>
+    <div className="login-background">
+      <div className="view-container glass-effect dark-theme">
+        {/* ใช้สีทอง (Gold) ให้เข้ากับบัลลังก์ในภาพ */}
+        <h1 style={{ fontWeight: '600', fontSize: '32px', marginBottom: '8px', color: '#f1c40f', textShadow: '2px 2px 4px rgba(0,0,0,0.8)' }}>
+          COUP
+        </h1>
+        
+        {/* สีเทาสว่างสำหรับคำอธิบาย */}
+        <p style={{ color: '#cccccc', fontSize: '15px', marginTop: 0, marginBottom: '32px' }}>
+          กรุณาระบุชื่อเพื่อเข้าสู่โถงอำนาจ
+        </p>
+
+        <input 
+          type="text" 
+          placeholder="ชื่อผู้เล่นของคุณ" 
+          value={username}
+          onChange={(e) => setUsername(e.target.value)} 
+          onKeyDown={(e) => e.key === 'Enter' && handleLogin()} 
+        />
+        
+        <button className="primary" onClick={handleLogin}>
+          เข้าร่วมการแย่งชิง
+        </button>
+      </div>
     </div>
   );
 }

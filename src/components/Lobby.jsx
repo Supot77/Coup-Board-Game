@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { doc, setDoc, getDoc, updateDoc, deleteDoc, collection, onSnapshot } from "firebase/firestore";
 import { db } from '../core/firebase';
+import './Lobby.css';
 
 export default function Lobby({ user, onLogout, onGameStart }) {
   const [roomCodeInput, setRoomCodeInput] = useState('');
@@ -8,7 +9,6 @@ export default function Lobby({ user, onLogout, onGameStart }) {
   const [players, setPlayers] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // ฟังก์ชันสุ่มรหัส 4 หลัก
   const generateRoomCode = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     let result = '';
@@ -16,30 +16,23 @@ export default function Lobby({ user, onLogout, onGameStart }) {
     return result;
   };
 
-  // ดักฟังข้อมูล Real-time จาก Firebase เมื่อมี currentRoom
   useEffect(() => {
     if (!currentRoom) return;
 
     const roomRef = doc(db, "rooms", currentRoom);
     const playersRef = collection(db, `rooms/${currentRoom}/players`);
 
-    // 1. ดักฟังสถานะห้อง
     const unsubRoom = onSnapshot(roomRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setIsAdmin(data.adminId === user.token);
-        
-        // ถ้าห้องถูกเปลี่ยนสถานะเป็น playing ให้สั่ง App.jsx สลับไปหน้าเกม
-        if (data.status === "playing") {
-          onGameStart(currentRoom);
-        }
+        if (data.status === "playing") onGameStart(currentRoom);
       } else {
         alert("ห้องนี้ถูกปิดไปแล้วครับ");
         handleLeaveRoom();
       }
     });
 
-    // 2. ดักฟังรายชื่อผู้เล่น
     const unsubPlayers = onSnapshot(playersRef, (snapshot) => {
       let amIStillHere = false;
       const playerList = [];
@@ -49,21 +42,15 @@ export default function Lobby({ user, onLogout, onGameStart }) {
         playerList.push({ id: docSnap.id, ...docSnap.data() });
       });
 
-      // ถ้าไม่มีชื่อเราในห้องแล้ว (โดนเตะ)
       if (!amIStillHere && snapshot.docs.length > 0) {
-        alert("คุณถูกเตะออกจากห้อง!");
+        alert("คุณถูกเชิญออกจากโต๊ะสภา!");
         handleLeaveRoom();
         return;
       }
-
       setPlayers(playerList);
     });
 
-    // คืนค่าฟังก์ชันสำหรับยกเลิกการดักฟังเมื่อเปลี่ยนหน้า หรือออกจากห้อง
-    return () => {
-      unsubRoom();
-      unsubPlayers();
-    };
+    return () => { unsubRoom(); unsubPlayers(); };
   }, [currentRoom, user.token, onGameStart]);
 
   const handleCreateRoom = async () => {
@@ -100,13 +87,12 @@ export default function Lobby({ user, onLogout, onGameStart }) {
   };
 
   const handleKickPlayer = async (playerId, playerName) => {
-    if(window.confirm(`ต้องการเตะ ${playerName} ใช่ไหม?`)) {
+    if(window.confirm(`ต้องการไล่ ${playerName} ออกจากสภาหรือไม่?`)) {
       await deleteDoc(doc(db, `rooms/${currentRoom}/players`, playerId));
     }
   };
 
   const handleStartGame = async () => {
-    // สับไพ่เตรียมไว้เลยตั้งแต่ตอนกดเริ่มเกม
     const baseDeck = ['Duke','Duke','Duke', 'Assassin','Assassin','Assassin', 'Captain','Captain','Captain', 'Ambassador','Ambassador','Ambassador', 'Contessa','Contessa','Contessa'];
     const shuffledDeck = baseDeck.sort(() => Math.random() - 0.5);
     try { 
@@ -114,66 +100,73 @@ export default function Lobby({ user, onLogout, onGameStart }) {
     } catch (error) { console.error(error); }
   };
 
-  // --- ส่วนแสดงผล UI ---
-  
-  // ถ้าเข้าห้องไปแล้ว โชว์หน้ารายละเอียดห้อง
+  // --- UI: เมื่ออยู่ในห้องรอเล่น ---
   if (currentRoom) {
     return (
-      <div className="view-container">
-        <h2>รหัสห้อง: <span style={{ color: 'var(--gold)' }}>{currentRoom}</span></h2>
-        
-        <div style={{ backgroundColor: 'var(--light-gray)', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
-          <h3 style={{ margin: '0 0 10px 0' }}>รายชื่อผู้เล่น ({players.length}/6)</h3>
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            {players.map(p => (
-              <li key={p.id} style={{ padding: '8px', borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>👤 {p.name} {p.id === user.token ? "(คุณ)" : ""}</span>
-                {isAdmin && p.id !== user.token && (
-                  <button className="danger" style={{ padding: '5px 10px', margin: 0, fontSize: '12px' }} onClick={() => handleKickPlayer(p.id, p.name)}>❌ เตะ</button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
+      <div className="lobby-background">
+        <div className="view-container glass-effect dark-theme lobby-glass">
+          <h2 style={{ color: 'white', marginTop: 0, fontWeight: '500' }}>
+            รหัสสภา: <span style={{ color: '#f1c40f', letterSpacing: '2px' }}>{currentRoom}</span>
+          </h2>
+          
+          <div className="lobby-box">
+            <h3 style={{ margin: '0 0 15px 0', color: '#f1c40f', borderBottom: '1px solid rgba(241, 196, 15, 0.3)', paddingBottom: '10px' }}>
+              ผู้ร่วมโต๊ะสภา ({players.length}/6)
+            </h3>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+              {players.map(p => (
+                <li key={p.id} className="lobby-player-item">
+                  <span style={{ color: 'white', fontSize: '17px' }}>
+                    {p.name} {p.id === user.token ? <span style={{ color: '#f1c40f' }}>(คุณ)</span> : ""}
+                  </span>
+                  {isAdmin && p.id !== user.token && (
+                    <button className="danger-outline" onClick={() => handleKickPlayer(p.id, p.name)}>❌ ขับไล่</button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
 
-        {isAdmin && (
-          <button 
-            className="gold" 
-            disabled={players.length < 2} 
-            onClick={handleStartGame}
-          >
-            {players.length < 2 ? "รอผู้เล่น... (ต้องมี 2 คนขึ้นไป)" : "เริ่มเกม!"}
-          </button>
-        )}
-        <button className="danger" onClick={handleLeaveRoom}>ออกจากห้อง</button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '20px' }}>
+            {isAdmin && (
+              <button className="primary" disabled={players.length < 2} onClick={handleStartGame}>
+                {players.length < 2 ? "รอผู้เข้าร่วม... (ต้องมี 2 คนขึ้นไป)" : "เริ่มการประชุม (Start Game)"}
+              </button>
+            )}
+            <button className="transparent-btn" onClick={handleLeaveRoom}>ลุกจากโต๊ะ (ออกจากสภา)</button>
+          </div>
+        </div>
       </div>
     );
   }
 
-  // ถ้ายังไม่เข้าห้อง โชว์เมนูสร้าง/จอยห้อง
+  // --- UI: เมนูสร้าง/เข้าร่วม ---
   return (
-    <div className="view-container">
-      <h2>ระบบจัดการห้อง</h2>
-      <p>ยินดีต้อนรับคุณ: <b>{user.name}</b></p>
-      
-      <div style={{ padding: '20px', border: '2px dashed #ccc', borderRadius: '8px', marginBottom: '15px' }}>
-        <button className="primary" onClick={handleCreateRoom}>+ สร้างห้องใหม่</button>
-      </div>
+    <div className="lobby-background">
+      <div className="view-container glass-effect dark-theme lobby-glass">
+        <h2 style={{ color: '#f1c40f', margin: '0 0 5px 0', fontSize: '32px', letterSpacing: '1px' }}>สภาลับ</h2>
+        <p style={{ color: '#ccc', marginBottom: '30px', fontSize: '15px' }}>
+          ยินดีต้อนรับท่าน: <b style={{ color: 'white' }}>{user.name}</b>
+        </p>
+        
+        <div className="lobby-action-box">
+          <button className="primary" onClick={handleCreateRoom}>+ สร้างสภาใหม่</button>
+        </div>
 
-      <div style={{ padding: '20px', border: '2px dashed #ccc', borderRadius: '8px', marginBottom: '15px' }}>
-        <input 
-          type="text" 
-          placeholder="ใส่รหัสห้อง 4 หลัก" 
-          maxLength="4" 
-          value={roomCodeInput}
-          onChange={(e) => setRoomCodeInput(e.target.value)}
-          style={{ textTransform: 'uppercase', width: '150px' }}
-        />
-        <br />
-        <button className="gold" onClick={handleJoinRoom}>เข้าร่วมห้อง</button>
-      </div>
+        <div className="lobby-action-box" style={{ marginTop: '20px' }}>
+          <input 
+            type="text" 
+            placeholder="รหัส 4 หลัก" 
+            maxLength="4" 
+            value={roomCodeInput}
+            onChange={(e) => setRoomCodeInput(e.target.value)}
+            style={{ textTransform: 'uppercase', textAlign: 'center', letterSpacing: '6px', fontSize: '20px' }}
+          />
+          <button className="gold-outline" onClick={handleJoinRoom}>เข้าร่วมสภา</button>
+        </div>
 
-      <button className="danger" onClick={onLogout} style={{ marginTop: '20px' }}>ออกจากระบบ</button>
+        <button className="transparent-btn" onClick={onLogout} style={{ marginTop: '25px' }}>ออกจากระบบ</button>
+      </div>
     </div>
   );
 }

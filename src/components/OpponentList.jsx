@@ -1,41 +1,61 @@
-// components/OpponentList.jsx
 import React from 'react';
 
+// ดึงรูปภาพมาใช้เฉลยการ์ดที่ตายแล้วให้สวยงาม
 const cardImages = {
-  "Duke": "/img/duk.jpg?v=2",
-  "Assassin": "/img/ass.jpg?v=2",
-  "Captain": "/img/cap.jpg?v=2",
-  "Ambassador": "/img/amb.jpg?v=2",
-  "Contessa": "/img/cont.jpg?v=2"
+  "Duke": "/img/duk.jpg",
+  "Assassin": "/img/ass.jpg",
+  "Captain": "/img/cap.jpg",
+  "Ambassador": "/img/amb.jpg",
+  "Contessa": "/img/cont.jpg"
 };
 
 export default function OpponentList({ players, userToken, roomData }) {
   return (
-    <div style={{ backgroundColor: 'rgba(0,0,0,0.2)', padding: '20px', borderRadius: '12px' }}>
-      <h3 style={{ color: 'var(--gold)', margin: '0 0 15px 0' }}>👥 คู่แข่งของคุณ</h3>
-      <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
-        {players.filter(p => p.id !== userToken).map(p => {
+    <div className="gb-panel">
+      <div className="gb-panel-title">👥 PLAYERS</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {players.map(p => {
           const isActiveTurn = roomData?.turnOrder?.[roomData?.currentTurnIndex] === p.id;
+          const isMe = p.id === userToken;
+          
           return (
-            <div key={p.id} style={{ 
-              backgroundColor: 'rgba(255,255,255,0.1)', 
-              padding: '15px', 
-              borderRadius: '12px', 
-              textAlign: 'center', 
-              flex: '1 1 120px', 
-              opacity: p.isDead ? 0.3 : 1, 
-              border: isActiveTurn ? '2px solid var(--gold)' : '2px solid transparent',
-              boxShadow: isActiveTurn ? '0 0 15px var(--gold)' : 'none',
-              transition: 'all 0.3s ease'
-            }}>
-              <h4 style={{ margin: '0 0 5px 0', fontSize: '16px', color: isActiveTurn ? 'var(--gold)' : 'white' }}>{p.name}</h4>
-              <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>💰 {p.coins}</p>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '5px', marginTop: '10px' }}>
-                {p.cards?.map((c, i) => (
-                  <div key={i} style={{ width: '40px', height: '60px', borderRadius: '5px', border: '1px solid #ccc', backgroundColor: c.isDead ? '#7f8c8d' : 'var(--red)', backgroundImage: c.isDead && cardImages[c.character] ? `url(${cardImages[c.character]})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', filter: c.isDead ? 'grayscale(100%)' : 'none', position: 'relative' }}>
-                    {c.isDead && <div style={{ position:'absolute', bottom:0, width:'100%', background:'rgba(0,0,0,0.8)', fontSize:'9px', padding: '2px 0' }}>{c.character}</div>}
-                  </div>
-                ))}
+            <div key={p.id} className={`player-ring ${isActiveTurn ? 'active' : ''}`} style={{ opacity: p.isDead ? 0.4 : 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <span style={{ color: isActiveTurn ? '#d4af37' : '#ccc', fontWeight: isActiveTurn ? '600' : '400', fontSize: '15px' }}>
+                  {isMe ? '👑 ' : ''}{p.name}
+                </span>
+                {isActiveTurn && <span style={{ fontSize: '10px', color: '#d4af37', background: 'rgba(212,175,55,0.15)', padding: '2px 6px', borderRadius: '4px' }}>TURN</span>}
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                
+                {/* โซนแสดงไพ่คู่แข่ง */}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                  {p.cards?.map((c, i) => (
+                    <div 
+                      key={i} 
+                      className={`opponent-card ${c.isDead ? 'dead' : 'alive'}`}
+                      style={{ 
+                        // แทรกรูปภาพเฉพาะตอนตายเท่านั้น
+                        backgroundImage: c.isDead ? `linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.95) 100%), url(${cardImages[c.character] || ''})` : 'none'
+                      }}
+                    >
+                      {/* เฉลยชื่อการ์ดเฉพาะใบที่ตายแล้ว */}
+                      {c.isDead && (
+                        <span className="dead-card-text">
+                          {c.character}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* โซนเงิน */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ color: '#d4af37', fontSize: '18px', fontWeight: 'bold' }}>{p.coins}</span>
+                  <span style={{ fontSize: '14px' }}>💰</span>
+                </div>
+                
               </div>
             </div>
           )

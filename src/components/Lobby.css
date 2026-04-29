@@ -1,0 +1,36 @@
+/* Lobby.css */
+.lobby-background {
+  background-image: url('/bg-lobby.jpg'); 
+  background-size: cover; background-position: center; background-repeat: no-repeat;
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+  display: flex; align-items: center; justify-content: center; z-index: 10;
+}
+
+.lobby-glass {
+  max-width: 450px !important; 
+  background-color: rgba(5, 5, 5, 0.65) !important; 
+  border: 1px solid rgba(241, 196, 15, 0.4) !important; 
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(241, 196, 15, 0.05); 
+}
+
+.lobby-box, .lobby-action-box {
+  background-color: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(241, 196, 15, 0.15); 
+  border-radius: 16px; padding: 24px;
+}
+
+.lobby-player-item {
+  padding: 14px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex; justify-content: space-between; align-items: center;
+}
+
+.lobby-player-item:last-child { border-bottom: none; }
+
+button.gold-outline { background-color: rgba(241, 196, 15, 0.05); color: #f1c40f; border: 1px solid #f1c40f; width: 100%; margin: 0; }
+button.gold-outline:hover { background-color: rgba(241, 196, 15, 0.2); }
+
+button.transparent-btn { background-color: transparent; color: #86868b; border: 1px solid rgba(255, 255, 255, 0.15); width: 100%; margin: 0; }
+button.transparent-btn:hover { background-color: rgba(255, 255, 255, 0.1); color: #ffffff; }
+
+button.danger-outline { background-color: transparent; color: #e74c3c; border: 1px solid #e74c3c; padding: 6px 12px; font-size: 13px; margin: 0; }
+button.danger-outline:hover { background-color: rgba(231, 76, 60, 0.15); }

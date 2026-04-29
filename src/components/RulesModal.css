@@ -1,0 +1,144 @@
+/* RulesModal.css */
+.rules-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999; /* ให้อยู่บนสุดเสมอ */
+  padding: 20px;
+  box-sizing: border-box;
+  animation: fadeIn 0.3s ease;
+}
+
+.rules-modal {
+  background: linear-gradient(135deg, rgba(20, 20, 25, 0.95), rgba(10, 10, 15, 0.98));
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255,255,255,0.05);
+  border-radius: 24px;
+  width: 100%;
+  max-width: 650px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rules-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  background: rgba(0,0,0,0.2);
+}
+
+.rules-title {
+  color: #d4af37;
+  font-family: 'Cinzel', serif;
+  font-size: 22px;
+  font-weight: bold;
+  margin: 0;
+  letter-spacing: 1px;
+}
+
+.rules-close-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #888;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: 0.2s;
+  padding: 0;
+  margin: 0;
+}
+
+.rules-close-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.4);
+  transform: rotate(90deg);
+}
+
+.rules-content {
+  padding: 24px;
+  overflow-y: auto;
+  color: #e2e0e8;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* Scrollbar สำหรับเนื้อหากติกา */
+.rules-content::-webkit-scrollbar { width: 6px; }
+.rules-content::-webkit-scrollbar-track { background: transparent; }
+.rules-content::-webkit-scrollbar-thumb { background: rgba(212,175,55,0.3); border-radius: 4px; }
+.rules-content::-webkit-scrollbar-thumb:hover { background: rgba(212,175,55,0.6); }
+
+.rule-section {
+  margin-bottom: 24px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.rule-section-title {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 0;
+  margin-bottom: 12px;
+  border-bottom: 1px dashed rgba(255,255,255,0.1);
+  padding-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* กล่องตัวละคร */
+.char-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 500px) {
+  .char-grid { grid-template-columns: 1fr 1fr; }
+}
+
+.char-item {
+  background: rgba(0,0,0,0.3);
+  border-left: 4px solid #fff;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.char-item.duke { border-left-color: #8b5cf6; }
+.char-item.assassin { border-left-color: #ef4444; }
+.char-item.captain { border-left-color: #3b82f6; }
+.char-item.ambassador { border-left-color: #10b981; }
+.char-item.contessa { border-left-color: #ec4899; }
+
+.char-name { font-weight: bold; font-family: 'Cinzel', serif; font-size: 16px; margin-bottom: 4px; display: block; }
+.char-item.duke .char-name { color: #c4b5fd; }
+.char-item.assassin .char-name { color: #fca5a5; }
+.char-item.captain .char-name { color: #93c5fd; }
+.char-item.ambassador .char-name { color: #6ee7b7; }
+.char-item.contessa .char-name { color: #f9a8d4; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
