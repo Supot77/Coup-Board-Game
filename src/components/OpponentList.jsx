@@ -2,11 +2,11 @@
 import React from 'react';
 
 const cardImages = {
-  "Duke": "/img/duke.jpg",
-  "Assassin": "/img/assassin.jpg",
-  "Captain": "/img/captain.jpg",
-  "Ambassador": "/img/ambassador.jpg",
-  "Contessa": "/img/contessa.jpg"
+  "Duke": "/img/duk.jpg?v=2",
+  "Assassin": "/img/ass.jpg?v=2",
+  "Captain": "/img/cap.jpg?v=2",
+  "Ambassador": "/img/amb.jpg?v=2",
+  "Contessa": "/img/cont.jpg?v=2"
 };
 
 export default function OpponentList({ players, userToken, roomData }) {

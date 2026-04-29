@@ -1,4 +1,3 @@
-// components/ActionLog.jsx
 import React, { useEffect, useRef } from 'react';
 
 export default function ActionLog({ historyLog, gameState, alivePlayers, roomData }) {
@@ -9,9 +8,12 @@ export default function ActionLog({ historyLog, gameState, alivePlayers, roomDat
   }, [historyLog]);
 
   return (
-    <div style={{ backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+    // 🌟 1. เพิ่ม maxHeight เพื่อจำกัดความสูงของกรอบฝั่งซ้ายล่าง
+    <div style={{ backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', flex: 1, maxHeight: '450px' }}>
       <h3 style={{ color: 'var(--gold)', margin: '0 0 10px 0' }}>📜 ประวัติการกระทำ</h3>
-      <div className="history-log-box">
+      
+      {/* 🌟 2. history-log-box จะมี Scrollbar อัตโนมัติเมื่อข้อความล้น */}
+      <div className="history-log-box" style={{ overflowY: 'auto', flex: 1, paddingRight: '10px' }}>
         {historyLog.map((log, i) => (
           <p key={i} className="log-text">{log.text}</p>
         ))}

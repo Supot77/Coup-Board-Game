@@ -3,11 +3,12 @@ import { useState, useEffect } from 'react';
 import { doc, collection, onSnapshot, getDocs, updateDoc, writeBatch, increment, arrayUnion, deleteDoc } from "firebase/firestore";
 import { db } from '../core/firebase';
 
-// Import ส่วนประกอบย่อยที่เราเพิ่งสร้าง
+// Import ส่วนประกอบย่อย
 import VictoryScreen from './VictoryScreen.jsx';
 import OpponentList from './OpponentList.jsx';
 import ActionLog from './ActionLog.jsx';
 import PlayerActionPanel from './PlayerActionPanel.jsx';
+import ActionAlert from './ActionAlert.jsx'; 
 
 const actionCharacterMap = { "Tax": "Duke", "Assassinate": "Assassin", "Steal": "Captain", "Exchange": "Ambassador" };
 
@@ -21,7 +22,6 @@ const shuffleArray = (array) => {
 };
 
 export default function GameBoard({ roomCode, user, onLeaveGame }) {
-  // --- State และ Logic ทั้งหมดยังเหมือนเดิม ---
   const [roomData, setRoomData] = useState(null);
   const [players, setPlayers] = useState([]);
   const [targetAction, setTargetAction] = useState(null);
@@ -305,7 +305,6 @@ export default function GameBoard({ roomCode, user, onLeaveGame }) {
     }
   };
 
-  // --- ส่วนแสดงผล UI ที่สะอาดและเป็นระเบียบขึ้น ---
   if (!roomData || !myPlayer) return <div className="game-board-full" style={{justifyContent:'center', alignItems:'center'}}><h2>กำลังโหลดข้อมูลเกม...</h2></div>;
   
   if (gameState === "game_over") {
@@ -332,18 +331,27 @@ export default function GameBoard({ roomCode, user, onLeaveGame }) {
 
       <div className="game-layout">
         <div className="game-left-panel">
-          {/* เรียกใช้ Component ย่อยที่แยกไว้ */}
+          
+          {/* รายชื่อคู่แข่งด้านบน */}
           <OpponentList players={players} userToken={user.token} roomData={roomData} />
           
+          {/* 🌟 ย้าย ActionAlert มาไว้ตรงนี้ ระหว่างรายชื่อผู้เล่นและกล่องประวัติ */}
+          <ActionAlert 
+            gameState={gameState} 
+            pendingAction={roomData?.pendingAction} 
+            players={players} 
+          />
+          
+          {/* กล่องประวัติการกระทำด้านล่าง */}
           <ActionLog 
             historyLog={historyLog} 
             gameState={gameState} 
             alivePlayers={alivePlayers} 
             roomData={roomData} 
           />
+
         </div>
 
-        {/* เรียกใช้ Component ย่อยที่แยกไว้ พร้อมส่งฟังก์ชันต่างๆ ไปให้ใช้งาน */}
         <PlayerActionPanel 
           gameState={gameState}
           isMyTurn={isMyTurn}
