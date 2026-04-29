@@ -1,0 +1,66 @@
+import { useState, useEffect } from 'react';
+import Login from './components/Login';
+import Lobby from './components/Lobby';
+import GameBoard from './components/GameBoard';
+import RulesModal from './components/RulesModal';
+
+function App() {
+  const [currentView, setCurrentView] = useState('login');
+  const [user, setUser] = useState({ token: '', name: '' });
+  const [playingRoomCode, setPlayingRoomCode] = useState(null);
+  const [showRules, setShowRules] = useState(false);
+
+  // เช็คว่าเคยล็อกอินค้างไว้ไหม
+  useEffect(() => {
+    const token = localStorage.getItem('coup_session_token');
+    const name = localStorage.getItem('coup_player_name');
+    if (token && name) {
+      setUser({ token, name });
+      setCurrentView('lobby');
+    }
+  }, []);
+
+  // ฟังก์ชันสลับไปหน้า Lobby
+  const handleLoginSuccess = (userData) => {
+    console.log("✅ App.jsx ได้รับข้อมูลแล้ว! กำลังสลับไปหน้า Lobby...");
+    setUser(userData);
+    setCurrentView('lobby');
+  };
+
+  // ฟังก์ชันออกจากระบบ
+  const handleLogout = () => {
+    localStorage.removeItem('coup_session_token');
+    localStorage.removeItem('coup_player_name');
+    setCurrentView('login');
+  };
+
+  // ฟังก์ชันสลับไปหน้ากระดานเกม
+  const handleGameStart = (roomCode) => {
+    setPlayingRoomCode(roomCode);
+    setCurrentView('game');
+  };
+
+  return (
+    <>
+      {/* ปุ่มเปิดกติกา (ซ่อนตอนอยู่หน้าล็อกอิน) */}
+      {currentView !== 'login' && (
+        <button 
+          onClick={() => setShowRules(true)} 
+          style={{ position: 'fixed', top: '10px', right: '10px', backgroundColor: 'var(--gold)', color: 'var(--navy)', padding: '5px 10px', zIndex: 999 }}
+        >
+          📖 กติกา
+        </button>
+      )}
+
+      {/* หน้าต่างกติกา */}
+      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+
+      {/* ควบคุมการแสดงผลหน้าจอหลัก */}
+      {currentView === 'login' && <Login onLoginSuccess={handleLoginSuccess} />}
+      {currentView === 'lobby' && <Lobby user={user} onLogout={handleLogout} onGameStart={handleGameStart} />}
+      {currentView === 'game' && <GameBoard roomCode={playingRoomCode} user={user} onLeaveGame={() => setCurrentView('lobby')} />}
+    </>
+  );
+}
+
+export default App;
