@@ -460,3 +460,20 @@
   width: 100%;
   transform: scale(0.95);
 }
+
+/* ================= เอฟเฟกต์เหรียญเรืองแสง ================= */
+.glowing-coin {
+  display: inline-block;
+  animation: coinGlow 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes coinGlow {
+  0% {
+    text-shadow: 0 0 5px rgba(212, 175, 55, 0.4);
+    transform: scale(1);
+  }
+  100% {
+    text-shadow: 0 0 12px rgba(255, 215, 0, 1), 0 0 25px rgba(255, 215, 0, 0.8);
+    transform: scale(1.15); /* ขยายตัวขึ้นนิดนึงตอนสว่างสุด */
+  }
+}

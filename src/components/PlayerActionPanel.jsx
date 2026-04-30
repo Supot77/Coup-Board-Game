@@ -69,7 +69,10 @@ export default function PlayerActionPanel({
               ⏳ เวลาตัดสินใจ: {timeLeft} วิ
             </div>
           )}
-          <div style={{ fontSize: needsActionSpace ? '24px' : '32px', color: '#d4af37', fontWeight: '900', transition: 'all 0.3s' }}>💰 {myPlayer?.coins} Coins</div>
+          {/* โค้ดใหม่ที่ถูกต้อง */}
+          <div style={{ fontSize: needsActionSpace ? '24px' : '32px', color: '#d4af37', fontWeight: '900', transition: 'all 0.3s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+            <span className="glowing-coin" style={{ fontSize: needsActionSpace ? '22px' : '28px' }}>🪙</span> {myPlayer?.coins} Coins
+          </div>
         </div>
 
         <div className="card-container">

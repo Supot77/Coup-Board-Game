@@ -51,9 +51,9 @@ export default function OpponentList({ players, userToken, roomData }) {
                 </div>
 
                 {/* โซนเงิน */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ color: '#d4af37', fontSize: '18px', fontWeight: 'bold' }}>{p.coins}</span>
-                  <span style={{ fontSize: '14px' }}>💰</span>
+                  <span className="glowing-coin" style={{ fontSize: '16px' }}>🪙</span>
                 </div>
                 
               </div>

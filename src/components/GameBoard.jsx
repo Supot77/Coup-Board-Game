@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, collection, onSnapshot, getDocs, updateDoc, writeBatch, increment, arrayUnion, deleteDoc } from "firebase/firestore";
+import { doc, collection, onSnapshot, getDocs, getDoc, updateDoc, writeBatch, increment, arrayUnion, deleteDoc } from "firebase/firestore";
 import { db } from '../core/firebase';
 import './GameBoard.css';
 
@@ -89,6 +89,7 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
   useEffect(() => {
     let timer;
     const isWaitingForMe = 
+      !myPlayer?.isDead &&
       (gameState === "waiting_for_responses" || gameState === "waiting_for_block_responses") && 
       !roomData?.passVotes?.includes(user.token) &&
       !(gameState === "waiting_for_responses" && roomData?.pendingAction?.sourceId === user.token) &&
@@ -110,14 +111,14 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
       setTimeLeft(null);
     }
     return () => clearInterval(timer);
-  }, [gameState, roomData?.passVotes, user.token]);
+  }, [gameState, roomData?.passVotes, user.token, myPlayer?.isDead]);
 
   useEffect(() => {
     if ((gameState === "waiting_for_responses" && roomData?.pendingAction?.sourceId === user.token) || 
         (gameState === "waiting_for_block_responses" && roomData?.pendingAction?.blockerId === user.token)) {
       if (roomData.passVotes?.length >= alivePlayers.length - 1) {
         if (gameState === "waiting_for_responses") resolveAction(roomData.pendingAction);
-        else passTurn(`ทุกคนยอมรับการบล็อก Action ยกเลิก`);
+        else passTurn(`ทุกคนยอมรับการบล็อก Action ถูกยกเลิก`);
       }
     }
   }, [roomData?.passVotes, gameState, alivePlayers.length]);
@@ -137,7 +138,7 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
 
   const performAction = async (actionName) => {
     if (myPlayer.coins >= 10 && actionName !== "Coup") {
-      alert("บังคับใช้ Coup เท่านั้น!");
+      alert("มี 10 เหรียญแล้ว บังคับใช้ Coup เท่านั้น!");
       setActionToConfirm(null);
       return;
     }
@@ -185,17 +186,42 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
     await updateDoc(doc(db, "rooms", roomCode), { passVotes: arrayUnion(user.token) });
   };
 
+  // --- [แก้ไขข้อ 1] จัดการการ Challenge และสลับไพ่ ---
   const handleChallenge = async () => {
     setIsProcessing(true);
     const pending = roomData.pendingAction;
     const actionCharacterMap = { "Tax": "Duke", "Assassinate": "Assassin", "Steal": "Captain", "Exchange": "Ambassador" };
     const isChallengingBlock = gameState === "waiting_for_block_responses";
+    
     const targetId = isChallengingBlock ? pending.blockerId : pending.sourceId;
     const claimedChar = isChallengingBlock ? pending.blockCharacter : actionCharacterMap[pending.actionName];
     const targetData = players.find(p => p.id === targetId);
-    const hasCard = targetData.cards.some(c => !c.isDead && c.character === claimedChar);
-    if (hasCard) triggerDiscard(user.token, `🚨 ท้าพลาด! มี ${claimedChar} จริง!`, isChallengingBlock ? "waiting_for_action" : "resolve_action", isChallengingBlock ? true : pending);
-    else triggerDiscard(targetId, `🚨 ท้าสำเร็จ! โกหก ไม่มี ${claimedChar}!`, isChallengingBlock ? "resolve_action" : "waiting_for_action", isChallengingBlock ? pending : true);
+    
+    const revealedCardIndex = targetData.cards.findIndex(c => !c.isDead && c.character === claimedChar);
+    const hasCard = revealedCardIndex !== -1;
+
+    if (hasCard) {
+      // มีการ์ดจริงๆ -> สับการ์ดเดิมเข้ากอง และสุ่มจั่วใบใหม่มาแทนที่
+      let currentDeck = [...roomData.deck];
+      currentDeck.sort(() => Math.random() - 0.5); // สับก่อนจั่ว
+      const newCardChar = currentDeck.pop(); 
+      currentDeck.push(claimedChar); // เอาใบที่โชว์ไปใส่คืน
+      currentDeck.sort(() => Math.random() - 0.5); // สับอีกรอบให้เนียน
+
+      let newTargetCards = [...targetData.cards];
+      newTargetCards[revealedCardIndex] = { character: newCardChar, isDead: false, id: Date.now() };
+
+      const batch = writeBatch(db);
+      batch.update(doc(db, `rooms/${roomCode}/players`, targetId), { cards: newTargetCards });
+      batch.update(doc(db, "rooms", roomCode), { deck: currentDeck });
+      await batch.commit();
+
+      // บังคับคนท้าพลาดทิ้งไพ่
+      triggerDiscard(user.token, `🚨 ท้าพลาด! ${targetData.name} มี ${claimedChar} จริง! (ทำการสลับไพ่ใหม่แล้ว)`, isChallengingBlock ? "waiting_for_action" : "resolve_action", isChallengingBlock ? true : pending);
+    } else {
+      // ไม่มีหน้าไพ่จริงๆ โกหก -> บังคับคนโกหกทิ้งไพ่
+      triggerDiscard(targetId, `🚨 ท้าสำเร็จ! โกหก ไม่มี ${claimedChar}!`, isChallengingBlock ? "resolve_action" : "waiting_for_action", isChallengingBlock ? pending : true);
+    }
   };
 
   const handleBlock = async (character) => {
@@ -207,18 +233,32 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
     });
   };
 
+  // --- [แก้ไขข้อ 3] เช็คสถานะการตายก่อน Resolve ป้องกันตายซ้อนตาย ---
   const resolveAction = async (pending) => {
     const sourceRef = doc(db, `rooms/${roomCode}/players`, pending.sourceId);
-    if (pending.targetId && players.find(p => p.id === pending.targetId)?.isDead) return passTurn(`เป้าหมายตายแล้ว!`);
+
+    // เช็คข้อมูลสดจาก DB ว่าเป้าหมายเสียชีวิตไปในขั้นตอนก่อนหน้า (เช่น ตอนชาเลนจ์) หรือยัง
+    if (pending.targetId) {
+      const targetSnap = await getDoc(doc(db, `rooms/${roomCode}/players`, pending.targetId));
+      if (targetSnap.exists() && targetSnap.data().isDead) {
+         return passTurn(`เป้าหมายเสียชีวิตและพ้นจากเกมไปแล้ว!`);
+      }
+    }
+
     if (pending.actionName === "ForeignAid") { await updateDoc(sourceRef, { coins: increment(2) }); passTurn(`💰 รับ Foreign Aid`); }
     else if (pending.actionName === "Tax") { await updateDoc(sourceRef, { coins: increment(3) }); passTurn(`💰 เก็บภาษีสำเร็จ`); }
     else if (pending.actionName === "Steal") {
-      const target = players.find(p => p.id === pending.targetId);
-      const stealAmount = target.coins >= 2 ? 2 : target.coins;
-      await updateDoc(doc(db, `rooms/${roomCode}/players`, target.id), { coins: increment(-stealAmount) });
-      await updateDoc(sourceRef, { coins: increment(stealAmount) });
-      passTurn(`🥷 ปล้นสำเร็จ`);
-    } else if (pending.actionName === "Assassinate") { triggerDiscard(pending.targetId, `🔪 ลอบสังหารสำเร็จ!`, "waiting_for_action", true); }
+      const targetSnap = await getDoc(doc(db, `rooms/${roomCode}/players`, pending.targetId));
+      const targetCoins = targetSnap.exists() ? targetSnap.data().coins : 0;
+      const stealAmount = targetCoins >= 2 ? 2 : targetCoins;
+      if (stealAmount > 0) {
+        await updateDoc(doc(db, `rooms/${roomCode}/players`, pending.targetId), { coins: increment(-stealAmount) });
+        await updateDoc(sourceRef, { coins: increment(stealAmount) });
+      }
+      passTurn(`🥷 ปล้นสำเร็จ ได้มา ${stealAmount} 💰`);
+    } else if (pending.actionName === "Assassinate") {
+      triggerDiscard(pending.targetId, `🔪 ลอบสังหารสำเร็จ!`, "waiting_for_action", true);
+    }
     else if (pending.actionName === "Exchange") {
       const deck = [...roomData.deck].sort(() => Math.random() - 0.5);
       const drawn = [ { character: deck.pop(), isDead: false, id: Date.now() }, { character: deck.pop(), isDead: false, id: Date.now()+1 } ];
@@ -232,22 +272,37 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
     newCards[cardIndex].isDead = true;
     const isDead = newCards.filter(c => !c.isDead).length === 0;
     await updateDoc(doc(db, `rooms/${roomCode}/players`, user.token), { cards: newCards, isDead });
-    if (roomData.afterDiscardState === "waiting_for_action") await passTurn(`เหตุการณ์สงบลง`);
-    else if (roomData.afterDiscardState === "resolve_action") await resolveAction(roomData.afterDiscardPayload);
+    
+    if (roomData.afterDiscardState === "waiting_for_action") {
+      await passTurn(`เหตุการณ์สงบลง`);
+    } else if (roomData.afterDiscardState === "resolve_action") {
+      await resolveAction(roomData.afterDiscardPayload);
+    }
   };
 
   const handleToggleExchangeCard = (idx) => {
     setSelectedAmbassadorCards(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : prev.length < myPlayer.cards.filter(c => !c.isDead).length ? [...prev, idx] : prev);
   };
 
+  // --- [แก้ไขข้อ 2] รีเซ็ตการ์ดลงกองทันทีที่ Ambassador เปลี่ยนไพ่เสร็จ ---
   const confirmExchange = async () => {
     setIsProcessing(true);
     const alive = myPlayer.cards.filter(c => !c.isDead);
     const pool = [...alive, ...roomData.drawnCards];
     const finalCards = [...pool.filter((_, idx) => selectedAmbassadorCards.includes(idx)), ...myPlayer.cards.filter(c => c.isDead)];
-    await updateDoc(doc(db, `rooms/${roomCode}/players`, user.token), { cards: finalCards });
-    await updateDoc(doc(db, "rooms", roomCode), { deck: [...roomData.deck, ...pool.filter((_, idx) => !selectedAmbassadorCards.includes(idx)).map(c => c.character)].sort(() => Math.random() - 0.5) });
-    setSelectedAmbassadorCards([]); passTurn("🔄 สลับไพ่สำเร็จ");
+    
+    // คัดแยกไพ่ที่ไม่ถูกเลือก กลับเข้าใต้กองและสับ
+    const unselectedCards = pool.filter((_, idx) => !selectedAmbassadorCards.includes(idx)).map(c => c.character);
+    const newDeck = [...roomData.deck, ...unselectedCards].sort(() => Math.random() - 0.5);
+
+    const batch = writeBatch(db);
+    batch.update(doc(db, `rooms/${roomCode}/players`, user.token), { cards: finalCards });
+    // ตั้งค่า drawnCards เป็น [] ทันทีเพื่อล้างไพ่ออกจากระบบหน้าจอ UI
+    batch.update(doc(db, "rooms", roomCode), { deck: newDeck, drawnCards: [] });
+    await batch.commit();
+
+    setSelectedAmbassadorCards([]);
+    passTurn("🔄 สลับไพ่สำเร็จ");
   };
 
   const handleAdminReset = async () => { if (window.confirm("ยุติเกมและกลับล็อบบี้?")) await updateDoc(doc(db, "rooms", roomCode), { status: "lobby", gameState: "setup_phase", actionLog: "รอเริ่มเกมใหม่..." }); };
@@ -255,9 +310,6 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
 
   if (!roomData || !myPlayer) return <div>Loading...</div>;
   if (gameState === "game_over") return <VictoryScreen winnerName={alivePlayers[0]?.name} isAdmin={roomData?.adminId === user.token} onAdminReset={handleAdminReset} />;
-
-  // (โค้ดส่วนบนและการจัดการ State ทั้งหมดใน GameBoard.jsx คงไว้เหมือนเดิมทุกประการ)
-// ให้แก้ไขเฉพาะส่วน return ด้านล่างนี้ครับ:
 
   return (
     <div className="gb-wrapper">
@@ -286,7 +338,6 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
         </div>
         
         <div className="gb-right animate-fade-up">
-          {/* ลบป้ายประกาศฝั่งขวาออกไป แล้วเหลือแค่ ActionLog ล้วนๆ */}
           <ActionLog historyLog={historyLog} gameState={gameState} alivePlayers={alivePlayers} roomData={roomData} />
         </div>
       </div>
