@@ -23,7 +23,7 @@ export default function Login({ onLoginSuccess }) {
   };
 
   return (
-    <div className="login-bg fixed top-0 left-0 w-screen h-screen flex items-center justify-end pr-[8%] box-border z-10 bg-[linear-gradient(to_right,rgba(0,0,0,0)_40%,rgba(10,10,10,0.95)_85%),url('/bg-login.jpg')] bg-cover bg-center bg-no-repeat">
+    <div className="login-bg fixed top-0 left-0 w-screen h-screen flex items-center justify-center lg:justify-end px-4 lg:px-0 lg:pr-[8%] box-border z-10 bg-[linear-gradient(to_right,rgba(0,0,0,0)_40%,rgba(10,10,10,0.95)_85%),url('/bg-login.jpg')] bg-cover bg-center bg-no-repeat">
       <div className="bg-[rgba(15,15,15,0.4)] backdrop-blur-[20px] backdrop-saturate-[120%] border border-[rgba(241,196,15,0.2)] shadow-[0_24px_48px_rgba(0,0,0,0.6)] w-full max-w-[400px] rounded-[24px] p-[40px] text-center m-0">
         <h1 className="font-semibold text-[32px] mb-[8px] text-gold [text-shadow:2px_2px_4px_rgba(0,0,0,0.8)]">COUP</h1>
         <p className="text-[#cccccc] text-[15px] mt-0 mb-[32px]">กรุณาระบุชื่อเพื่อเข้าสู่โถงอำนาจ</p>

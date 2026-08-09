@@ -24,6 +24,7 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
   const [actionToConfirm, setActionToConfirm] = useState(null);
   const [historyLog, setHistoryLog] = useState([]);
   const [gameTime, setGameTime] = useState(0);
+  const [activeMobileTab, setActiveMobileTab] = useState('board'); // 'board' | 'players' | 'log'
 
   useEffect(() => {
     if (!roomData?.gameStartedAt || roomData?.gameState === "game_over") {
@@ -348,25 +349,60 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
 
   return (
     <div className="gameboard-bg font-outfit text-[#e2e0e8] h-screen w-screen flex flex-col overflow-hidden fixed top-0 left-0">
-      <header className="h-[70px] flex items-center justify-between px-6 shrink-0 animate-fade-up">
-        <h1 className="font-cinzel text-dark-gold text-2xl font-bold tracking-[2px] m-0">COUP</h1>
-        <div className="flex gap-[10px] items-center">
+      <header className="h-[60px] lg:h-[70px] flex items-center justify-between px-3 lg:px-6 shrink-0 animate-fade-up border-b border-white/[0.03]">
+        <h1 className="font-cinzel text-dark-gold text-lg lg:text-2xl font-bold tracking-[1px] lg:tracking-[2px] m-0">COUP</h1>
+        <div className="flex gap-1.5 lg:gap-[10px] items-center">
           {roomData?.gameStartedAt && (
-            <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200">
-              ⏱️ เวลาเล่น: {formatGameTime(gameTime)}
+            <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2 transition-all duration-200">
+              ⏱️ <span className="hidden sm:inline">เวลาเล่น:</span> {formatGameTime(gameTime)}
             </div>
           )}
-          <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200">🃏 Court Deck: {roomData?.deck?.length || 0}</div>
-          <button className="bg-[rgba(241,196,15,0.15)] border border-[rgba(212,175,55,0.2)] text-[#f1c40f] py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200 cursor-pointer" onClick={onShowRules}>📖 กติกา</button>
-          {roomData?.adminId === user.token && <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#fca5a5] py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200 cursor-pointer" onClick={handleAdminReset}>🔄 ยุติเกม</button>}
-          <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200 cursor-pointer" onClick={handleSurrender}>🚪 ออก</button>
+          <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2 transition-all duration-200">
+            🃏 <span className="hidden sm:inline">Court Deck:</span> {roomData?.deck?.length || 0}
+          </div>
+          <button className="bg-[rgba(241,196,15,0.15)] border border-[rgba(212,175,55,0.2)] text-[#f1c40f] py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2 transition-all duration-200 cursor-pointer" onClick={onShowRules}>
+            📖 <span className="hidden sm:inline">กติกา</span>
+          </button>
+          {roomData?.adminId === user.token && (
+            <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#fca5a5] py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2 transition-all duration-200 cursor-pointer" onClick={handleAdminReset}>
+              🔄 <span className="hidden sm:inline">ยุติเกม</span>
+            </button>
+          )}
+          <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2 transition-all duration-200 cursor-pointer" onClick={handleSurrender}>
+            🚪 <span className="hidden sm:inline">ออก</span>
+          </button>
         </div>
       </header>
 
-      <div className="flex gap-5 px-6 pb-5 h-[calc(100vh-70px)] box-border">
-        <div className="w-[260px] shrink-0 animate-fade-up"><OpponentList players={players} userToken={user.token} roomData={roomData} /></div>
+      {/* Mobile Tab Bar */}
+      <div className="flex lg:hidden justify-around bg-black/30 border-b border-white/[0.06] p-2 shrink-0 gap-2 px-3">
+        <button 
+          onClick={() => setActiveMobileTab('players')}
+          className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-fast cursor-pointer flex items-center justify-center gap-1.5 border ${activeMobileTab === 'players' ? 'bg-white/[0.06] text-[#f1c40f] border-[rgba(241,196,15,0.3)] shadow-lg' : 'text-white/60 hover:text-white border-transparent'}`}
+        >
+          👥 <span>ผู้เล่น</span>
+          <span className="bg-black/30 text-white/80 py-0.5 px-1.5 rounded-full text-[10px] font-bold">{players.length}</span>
+        </button>
+        <button 
+          onClick={() => setActiveMobileTab('board')}
+          className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-fast cursor-pointer flex items-center justify-center gap-1.5 border ${activeMobileTab === 'board' ? 'bg-white/[0.06] text-[#f1c40f] border-[rgba(241,196,15,0.3)] shadow-lg' : 'text-white/60 hover:text-white border-transparent'}`}
+        >
+          🎮 <span>สภา</span>
+        </button>
+        <button 
+          onClick={() => setActiveMobileTab('log')}
+          className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-fast cursor-pointer flex items-center justify-center gap-1.5 border ${activeMobileTab === 'log' ? 'bg-white/[0.06] text-[#f1c40f] border-[rgba(241,196,15,0.3)] shadow-lg' : 'text-white/60 hover:text-white border-transparent'}`}
+        >
+          📜 <span>ประวัติ</span>
+        </button>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-3 lg:gap-5 px-3 lg:px-6 pb-3 lg:pb-5 h-[calc(100vh-120px)] lg:h-[calc(100vh-70px)] box-border overflow-hidden mt-3 lg:mt-0">
+        <div className={`w-full lg:w-[260px] shrink-0 animate-fade-up lg:block ${activeMobileTab === 'players' ? 'block h-full overflow-y-auto' : 'hidden'}`}>
+          <OpponentList players={players} userToken={user.token} roomData={roomData} />
+        </div>
         
-        <div className="flex-1 flex flex-col gap-[15px] h-full">
+        <div className={`flex-1 flex flex-col gap-[15px] h-full lg:flex ${activeMobileTab === 'board' ? 'flex' : 'hidden'}`}>
           <PlayerActionPanel 
             gameState={gameState} isMyTurn={isMyTurn} myPlayer={myPlayer} players={players} roomData={roomData} userToken={user.token} 
             timeLeft={timeLeft} actionToConfirm={actionToConfirm} targetAction={targetAction} isProcessing={isProcessing} 
@@ -378,7 +414,7 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
           />
         </div>
         
-        <div className="w-[280px] shrink-0 animate-fade-up">
+        <div className={`w-full lg:w-[280px] shrink-0 animate-fade-up lg:block ${activeMobileTab === 'log' ? 'block h-full' : 'hidden'}`}>
           <ActionLog historyLog={historyLog} gameState={gameState} alivePlayers={alivePlayers} roomData={roomData} />
         </div>
       </div>

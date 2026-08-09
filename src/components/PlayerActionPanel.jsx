@@ -95,12 +95,12 @@ export default function PlayerActionPanel({
           </div>
         </div>
 
-        <div className="flex gap-5 transition-all duration-400">
+        <div className="flex gap-3 lg:gap-5 transition-all duration-400">
           {myPlayer?.cards?.map((c, i) => (
-            <div key={i} className={`rounded-[15px] border border-[rgba(212,175,55,0.3)] shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition-smooth bg-cover bg-center flex items-end justify-center p-[15px] w-[140px] h-[200px] ${c.isDead ? 'opacity-30 grayscale' : 'opacity-100 grayscale-0'}`} style={{ 
+            <div key={i} className={`rounded-[15px] border border-[rgba(212,175,55,0.3)] shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition-smooth bg-cover bg-center flex items-end justify-center p-2.5 lg:p-[15px] ${needsActionSpace ? 'w-[75px] h-[110px] sm:w-[90px] sm:h-[130px]' : 'w-[100px] h-[145px] sm:w-[140px] sm:h-[200px]'} ${c.isDead ? 'opacity-30 grayscale' : 'opacity-100 grayscale-0'}`} style={{ 
               backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.9)), url(${cardImages[c.character] || ''})`
             }}>
-              <span className={`text-[#d4af37] font-bold font-cinzel text-[18px] [text-shadow:2px_2px_4px_black] transition-all duration-400 ${c.isDead ? 'line-through' : 'no-underline'}`}>{c.character}</span>
+              <span className={`text-[#d4af37] font-bold font-cinzel [text-shadow:2px_2px_4px_black] transition-all duration-400 ${needsActionSpace ? 'text-[11px] sm:text-[13px]' : 'text-[14px] sm:text-[18px]'} ${c.isDead ? 'line-through' : 'no-underline'}`}>{c.character}</span>
             </div>
           ))}
         </div>

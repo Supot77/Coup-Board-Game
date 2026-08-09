@@ -93,7 +93,7 @@ export default function Lobby({ user, onLogout, onGameStart }) {
 
   if (currentRoom) {
     return (
-      <div className="lobby-bg bg-[url('/bg-lobby.jpg')] bg-cover bg-center bg-no-repeat fixed top-0 left-0 w-screen h-screen flex items-center justify-center z-10">
+      <div className="lobby-bg bg-[url('/bg-lobby.jpg')] bg-cover bg-center bg-no-repeat fixed top-0 left-0 w-screen h-screen flex items-center justify-center z-10 px-4">
         <div className="max-w-[450px] bg-[rgba(5,5,5,0.65)] border border-[rgba(241,196,15,0.4)] shadow-[0_0_40px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(241,196,15,0.05)] backdrop-blur-[20px] backdrop-saturate-[120%] w-full rounded-[24px] p-[40px] text-center m-0">
           <h2 className="text-white mt-0 font-medium text-2xl mb-4">
             รหัสสภา: <span className="text-gold tracking-[2px]">{currentRoom}</span>
@@ -133,7 +133,7 @@ export default function Lobby({ user, onLogout, onGameStart }) {
   }
 
   return (
-    <div className="lobby-bg bg-[url('/bg-lobby.jpg')] bg-cover bg-center bg-no-repeat fixed top-0 left-0 w-screen h-screen flex items-center justify-center z-10">
+    <div className="lobby-bg bg-[url('/bg-lobby.jpg')] bg-cover bg-center bg-no-repeat fixed top-0 left-0 w-screen h-screen flex items-center justify-center z-10 px-4">
       <div className="max-w-[450px] bg-[rgba(5,5,5,0.65)] border border-[rgba(241,196,15,0.4)] shadow-[0_0_40px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(241,196,15,0.05)] backdrop-blur-[20px] backdrop-saturate-[120%] w-full rounded-[24px] p-[40px] text-center m-0">
         <h2 className="text-gold m-0 mb-[5px] text-[32px] tracking-[1px] font-medium">สภาลับ</h2>
         <p className="text-[#ccc] mb-[30px] text-[15px]">
