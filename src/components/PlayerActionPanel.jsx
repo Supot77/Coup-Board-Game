@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 const cardImages = {
   "Duke": "/img/duk.jpg",
@@ -22,6 +22,14 @@ export default function PlayerActionPanel({
   handleVotePass, handleChallenge, handleBlock, submitDiscard, handleToggleExchangeCard, confirmExchange,
   gameTime
 }) {
+  const [showPeekCards, setShowPeekCards] = useState(false);
+
+  useEffect(() => {
+    if (gameState !== "waiting_for_responses" && gameState !== "waiting_for_block_responses") {
+      setShowPeekCards(false);
+    }
+  }, [gameState]);
+
   const alivePlayers = players.filter(p => !p.isDead);
   const isDead = myPlayer?.isDead;
 
@@ -252,6 +260,28 @@ export default function PlayerActionPanel({
                 </>
               )}
             </div>
+
+            {/* ปุ่มดูไพ่ของฉัน / Peek My Cards */}
+            <div className="mb-6 flex justify-center">
+              <button 
+                className="bg-white/10 hover:bg-white/20 border border-white/20 text-[#d4af37] text-xs py-1.5 px-3 rounded-md transition-fast cursor-pointer flex items-center gap-1 font-medium"
+                onClick={() => setShowPeekCards(!showPeekCards)}
+              >
+                {showPeekCards ? "🙈 ซ่อนไพ่ในมือ" : "👁️ ดูไพ่ในมือของฉัน"}
+              </button>
+            </div>
+
+            {showPeekCards && (
+              <div className="flex gap-4 justify-center mb-6 p-4 bg-black/40 rounded-xl border border-white/10 animate-fade-in max-w-[320px] mx-auto">
+                {myPlayer?.cards?.map((c, i) => (
+                  <div key={i} className={`relative rounded-lg border border-[rgba(212,175,55,0.3)] w-[90px] h-[130px] bg-cover bg-center flex items-end justify-center p-3 transition-smooth ${c.isDead ? 'opacity-30 grayscale' : 'opacity-100 grayscale-0'}`} style={{ 
+                    backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.9)), url(${cardImages[c.character] || ''})`
+                  }}>
+                    <span className={`text-[#d4af37] font-bold font-cinzel text-[11px] [text-shadow:1px_1px_2px_black] ${c.isDead ? 'line-through' : 'no-underline'}`}>{c.character}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* กล่องปุ่มกดตอบสนองด้านล่าง */}
             {isWaitingForMyResponse ? (
