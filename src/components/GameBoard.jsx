@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { doc, collection, onSnapshot, getDocs, getDoc, updateDoc, writeBatch, increment, arrayUnion, deleteDoc } from "firebase/firestore";
 import { db } from '../core/firebase';
-import './GameBoard.css';
 
 // Import ส่วนประกอบย่อย
 import VictoryScreen from './VictoryScreen.jsx';
@@ -312,21 +311,21 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
   if (gameState === "game_over") return <VictoryScreen winnerName={alivePlayers[0]?.name} isAdmin={roomData?.adminId === user.token} onAdminReset={handleAdminReset} />;
 
   return (
-    <div className="gb-wrapper">
-      <header className="gb-header animate-fade-up">
-        <h1 className="gb-title">COUP</h1>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <div className="gb-badge">🃏 Court Deck: {roomData?.deck?.length || 0}</div>
-          <button className="gb-badge" style={{ cursor: 'pointer', background: 'rgba(241,196,15,0.15)', color: '#f1c40f' }} onClick={onShowRules}>📖 กติกา</button>
-          {roomData?.adminId === user.token && <button className="gb-badge" style={{ cursor: 'pointer', color: '#fca5a5' }} onClick={handleAdminReset}>🔄 ยุติเกม</button>}
-          <button className="gb-badge" style={{ cursor: 'pointer' }} onClick={handleSurrender}>🚪 ออก</button>
+    <div className="gameboard-bg font-outfit text-[#e2e0e8] h-screen w-screen flex flex-col overflow-hidden fixed top-0 left-0">
+      <header className="h-[70px] flex items-center justify-between px-6 shrink-0 animate-fade-up">
+        <h1 className="font-cinzel text-dark-gold text-2xl font-bold tracking-[2px] m-0">COUP</h1>
+        <div className="flex gap-[10px] items-center">
+          <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200">🃏 Court Deck: {roomData?.deck?.length || 0}</div>
+          <button className="bg-[rgba(241,196,15,0.15)] border border-[rgba(212,175,55,0.2)] text-[#f1c40f] py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200 cursor-pointer" onClick={onShowRules}>📖 กติกา</button>
+          {roomData?.adminId === user.token && <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#fca5a5] py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200 cursor-pointer" onClick={handleAdminReset}>🔄 ยุติเกม</button>}
+          <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200 cursor-pointer" onClick={handleSurrender}>🚪 ออก</button>
         </div>
       </header>
 
-      <div className="gb-layout">
-        <div className="gb-left animate-fade-up"><OpponentList players={players} userToken={user.token} roomData={roomData} /></div>
+      <div className="flex gap-5 px-6 pb-5 h-[calc(100vh-70px)] box-border">
+        <div className="w-[260px] shrink-0 animate-fade-up"><OpponentList players={players} userToken={user.token} roomData={roomData} /></div>
         
-        <div className="gb-center">
+        <div className="flex-1 flex flex-col gap-[15px] h-full">
           <PlayerActionPanel 
             gameState={gameState} isMyTurn={isMyTurn} myPlayer={myPlayer} players={players} roomData={roomData} userToken={user.token} 
             timeLeft={timeLeft} actionToConfirm={actionToConfirm} targetAction={targetAction} isProcessing={isProcessing} 
@@ -337,7 +336,7 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
           />
         </div>
         
-        <div className="gb-right animate-fade-up">
+        <div className="w-[280px] shrink-0 animate-fade-up">
           <ActionLog historyLog={historyLog} gameState={gameState} alivePlayers={alivePlayers} roomData={roomData} />
         </div>
       </div>
