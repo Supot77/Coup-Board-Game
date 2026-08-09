@@ -8,6 +8,12 @@ import OpponentList from './OpponentList.jsx';
 import ActionLog from './ActionLog.jsx';
 import PlayerActionPanel from './PlayerActionPanel.jsx';
 
+const formatGameTime = (totalSeconds) => {
+  const mins = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+  const secs = String(totalSeconds % 60).padStart(2, '0');
+  return `${mins}:${secs}`;
+};
+
 export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) {
   const [roomData, setRoomData] = useState(null);
   const [players, setPlayers] = useState([]);
@@ -17,6 +23,24 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
   const [timeLeft, setTimeLeft] = useState(null);
   const [actionToConfirm, setActionToConfirm] = useState(null);
   const [historyLog, setHistoryLog] = useState([]);
+  const [gameTime, setGameTime] = useState(0);
+
+  useEffect(() => {
+    if (!roomData?.gameStartedAt || roomData?.gameState === "game_over") {
+      setGameTime(0);
+      return;
+    }
+
+    const updateTimer = () => {
+      const elapsed = Math.floor((Date.now() - roomData.gameStartedAt) / 1000);
+      setGameTime(elapsed >= 0 ? elapsed : 0);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+
+    return () => clearInterval(interval);
+  }, [roomData?.gameStartedAt, roomData?.gameState]);
 
   useEffect(() => {
     const roomRef = doc(db, "rooms", roomCode);
@@ -37,7 +61,12 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
           setHistoryLog(prev => {
             const lastLog = prev[prev.length - 1];
             if (lastLog?.raw !== data.actionLog) {
-              const timeString = new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+              const elapsedSeconds = data.gameStartedAt
+                ? Math.floor((Date.now() - data.gameStartedAt) / 1000)
+                : 0;
+              const mins = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
+              const secs = String(elapsedSeconds % 60).padStart(2, '0');
+              const timeString = `${mins}:${secs}`;
               return [...prev, { raw: data.actionLog, text: `[${timeString}] ${data.actionLog}` }];
             }
             return prev;
@@ -59,7 +88,14 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
               coins: 2, isDead: false
             });
           });
-          batch.update(roomRef, { deck: currentDeck, turnOrder: turnOrder.sort(() => Math.random() - 0.5), currentTurnIndex: 0, gameState: "waiting_for_action", actionLog: "🔥 เริ่มเกมได้! ขอให้โชคดี!" });
+          batch.update(roomRef, { 
+            deck: currentDeck, 
+            turnOrder: turnOrder.sort(() => Math.random() - 0.5), 
+            currentTurnIndex: 0, 
+            gameState: "waiting_for_action", 
+            actionLog: "🔥 เริ่มเกมได้! ขอให้โชคดี!",
+            gameStartedAt: Date.now()
+          });
           await batch.commit();
         }
       }
@@ -315,6 +351,11 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
       <header className="h-[70px] flex items-center justify-between px-6 shrink-0 animate-fade-up">
         <h1 className="font-cinzel text-dark-gold text-2xl font-bold tracking-[2px] m-0">COUP</h1>
         <div className="flex gap-[10px] items-center">
+          {roomData?.gameStartedAt && (
+            <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200">
+              ⏱️ เวลาเล่น: {formatGameTime(gameTime)}
+            </div>
+          )}
           <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200">🃏 Court Deck: {roomData?.deck?.length || 0}</div>
           <button className="bg-[rgba(241,196,15,0.15)] border border-[rgba(212,175,55,0.2)] text-[#f1c40f] py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200 cursor-pointer" onClick={onShowRules}>📖 กติกา</button>
           {roomData?.adminId === user.token && <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#fca5a5] py-2 px-4 rounded-full text-[13px] font-medium flex items-center gap-2 transition-all duration-200 cursor-pointer" onClick={handleAdminReset}>🔄 ยุติเกม</button>}
@@ -333,6 +374,7 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
             handleTargetSelect={handleTargetSelect} setTargetAction={setTargetAction} setActionToConfirm={setActionToConfirm} 
             handleVotePass={handleVotePass} handleChallenge={handleChallenge} handleBlock={handleBlock} submitDiscard={submitDiscard} 
             handleToggleExchangeCard={handleToggleExchangeCard} confirmExchange={confirmExchange}
+            gameTime={gameTime}
           />
         </div>
         

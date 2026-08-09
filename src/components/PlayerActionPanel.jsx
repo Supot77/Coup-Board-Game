@@ -10,10 +10,17 @@ const cardImages = {
 
 const actionCharacterMap = { "Tax": "Duke", "Assassinate": "Assassin", "Steal": "Captain", "Exchange": "Ambassador" };
 
+const formatGameTime = (totalSeconds) => {
+  const mins = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+  const secs = String(totalSeconds % 60).padStart(2, '0');
+  return `${mins}:${secs}`;
+};
+
 export default function PlayerActionPanel({ 
   gameState, isMyTurn, myPlayer, players, roomData, userToken, timeLeft, actionToConfirm, targetAction, isProcessing, 
   selectedAmbassadorCards, performAction, handleActionClick, handleTargetSelect, setTargetAction, setActionToConfirm, 
-  handleVotePass, handleChallenge, handleBlock, submitDiscard, handleToggleExchangeCard, confirmExchange 
+  handleVotePass, handleChallenge, handleBlock, submitDiscard, handleToggleExchangeCard, confirmExchange,
+  gameTime
 }) {
   const alivePlayers = players.filter(p => !p.isDead);
   const isDead = myPlayer?.isDead;
@@ -67,6 +74,11 @@ export default function PlayerActionPanel({
           {!isDead && timeLeft !== null && (
             <div className={`text-[14px] ${timeLeft <= 5 ? 'text-[#ef4444]' : 'text-[#d4af37]'} ${needsActionSpace ? 'mb-[5px]' : 'mb-[15px]'}`}>
               ⏳ เวลาตัดสินใจ: {timeLeft} วิ
+            </div>
+          )}
+          {roomData?.gameStartedAt && (
+            <div className={`text-[13px] text-white/60 ${needsActionSpace ? 'mb-[5px]' : 'mb-[15px]'}`}>
+              ⏱️ เวลาเล่น: {formatGameTime(gameTime)}
             </div>
           )}
           {/* โค้ดใหม่ที่ถูกต้อง */}
