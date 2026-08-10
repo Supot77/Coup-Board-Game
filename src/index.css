@@ -32,6 +32,17 @@ body {
   overflow-x: hidden;
 }
 
+/* Mobile touch fixes: eliminate 300ms tap delay and tap highlight flash */
+button, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Smooth momentum scrolling on iOS for overflow-y-auto containers */
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
 /* =========================================
    Scrollbar (cannot be done with Tailwind)
    ========================================= */

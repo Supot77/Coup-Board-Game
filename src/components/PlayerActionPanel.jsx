@@ -107,7 +107,7 @@ export default function PlayerActionPanel({
       </div>
 
       {/* ================= โซน ACTIONS & RESPONSES ================= */}
-      <div className={`bg-white/[0.03] border border-white/[0.06] rounded-[20px] p-5 relative box-border transition-smooth flex flex-col ${needsActionSpace ? 'flex-1 overflow-y-auto' : 'flex-[0_1_auto] min-h-[100px]'}`}>
+      <div className={`bg-white/[0.03] border border-white/[0.06] rounded-[20px] p-5 relative box-border transition-smooth flex flex-col ${needsActionSpace ? 'flex-1 overflow-y-auto overscroll-contain' : 'flex-[0_1_auto] min-h-[100px]'}`}>
         <div className="text-[#888] text-xs uppercase tracking-[2px] font-semibold mb-4 flex items-center gap-2">⚔️ ACTIONS</div>
         
         <div className="h-full flex items-center justify-center">
@@ -177,7 +177,7 @@ export default function PlayerActionPanel({
                 })}
               </div>
               <div className="flex justify-center">
-                <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full text-[13px] font-medium flex items-center gap-2 transition-fast !bg-[rgba(16,185,129,0.2)] !text-[#34d399] !border-[#10b981] cursor-pointer w-[200px] justify-center p-[10px]" 
+                <button style={{touchAction:'manipulation'}} className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full text-[13px] font-medium flex items-center gap-2 transition-fast !bg-[rgba(16,185,129,0.2)] !text-[#34d399] !border-[#10b981] cursor-pointer w-[200px] justify-center p-[10px]" 
                   disabled={isProcessing || selectedAmbassadorCards.length !== myPlayer.cards.filter(c => !c.isDead).length} 
                   onClick={confirmExchange}>
                   ยืนยันการสลับไพ่
@@ -188,32 +188,32 @@ export default function PlayerActionPanel({
 
           /* 6. แผงปุ่ม Actions หลัก */
           isMyTurn && !isDead && gameState === "waiting_for_action" ? (
-            <div className="flex flex-wrap gap-2 p-[5px] w-full">
-              <button className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#d4af37]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Income")}>
+            <div className="flex flex-wrap gap-2 p-[5px] pb-3 w-full">
+              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#d4af37]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Income")}>
                 <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Income</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#d4af37]">+1 💰</span></div>
                 <small className="block text-[10px] text-white/40 font-light">รับรายได้พื้นฐาน</small>
               </button>
-              <button className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#6366f1]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("ForeignAid")}>
+              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#6366f1]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("ForeignAid")}>
                 <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Foreign Aid</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#93c5fd]">+2 💰</span></div>
                 <small className="block text-[10px] text-white/40 font-light">รับเงินช่วยเหลือ (Duke บล็อกได้)</small>
               </button>
-              <button className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#ef4444]" disabled={myPlayer.coins < 7 || isProcessing} onClick={() => handleActionClick("Coup")}>
+              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#ef4444]" disabled={myPlayer.coins < 7 || isProcessing} onClick={() => handleActionClick("Coup")}>
                 <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Coup</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#fca5a5]">-7 💰</span></div>
                 <small className="block text-[10px] text-white/40 font-light">โค่นล้มอิทธิพลคู่แข่ง</small>
               </button>
-              <button className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#8b5cf6]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Tax")}>
+              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#8b5cf6]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Tax")}>
                 <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Tax (Duke)</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#c4b5fd]">+3 💰</span></div>
                 <small className="block text-[10px] text-white/40 font-light">เก็บภาษีจากกองกลาง</small>
               </button>
-              <button className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#ef4444]" disabled={myPlayer.coins < 3 || myPlayer.coins >= 10 || isProcessing} onClick={() => handleActionClick("Assassinate")}>
+              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#ef4444]" disabled={myPlayer.coins < 3 || myPlayer.coins >= 10 || isProcessing} onClick={() => handleActionClick("Assassinate")}>
                 <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Assassinate</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#fca5a5]">-3 💰</span></div>
                 <small className="block text-[10px] text-white/40 font-light">ลอบสังหาร (Contessa บล็อกได้)</small>
               </button>
-              <button className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#3b82f6]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Steal")}>
+              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#3b82f6]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Steal")}>
                 <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Steal (Captain)</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#93c5fd]">ขโมย 2 💰</span></div>
                 <small className="block text-[10px] text-white/40 font-light">ปล้นเงินจากผู้เล่นอื่น</small>
               </button>
-              <button className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#10b981] !flex-[1_1_100%]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Exchange")}>
+              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white w-full cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#10b981]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Exchange")}>
                 <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Exchange</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#6ee7b7]">สลับไพ่</span></div>
                 <small className="block text-[10px] text-white/40 font-light">แลกเปลี่ยนตัวละครกับกองกลาง (Ambassador)</small>
               </button>
