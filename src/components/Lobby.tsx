@@ -1,12 +1,19 @@
 import { useState, useEffect } from 'react';
 import { doc, setDoc, getDoc, updateDoc, deleteDoc, collection, onSnapshot } from "firebase/firestore";
 import { db } from '../core/firebase';
+import { User, Player } from '../types';
 
-export default function Lobby({ user, onLogout, onGameStart }) {
-  const [roomCodeInput, setRoomCodeInput] = useState('');
-  const [currentRoom, setCurrentRoom] = useState(localStorage.getItem('coup_current_room') || null);
-  const [players, setPlayers] = useState([]);
-  const [isAdmin, setIsAdmin] = useState(false);
+interface LobbyProps {
+  user: User;
+  onLogout: () => void;
+  onGameStart: (roomId: string) => void;
+}
+
+export default function Lobby({ user, onLogout, onGameStart }: LobbyProps) {
+  const [roomCodeInput, setRoomCodeInput] = useState<string>('');
+  const [currentRoom, setCurrentRoom] = useState<string | null>(localStorage.getItem('coup_current_room') || null);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
   const generateRoomCode = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -77,7 +84,7 @@ export default function Lobby({ user, onLogout, onGameStart }) {
     setPlayers([]);
   };
 
-  const handleKickPlayer = async (playerId, playerName) => {
+  const handleKickPlayer = async (playerId: string, playerName: string) => {
     if(window.confirm(`ต้องการไล่ ${playerName} ออกจากสภาหรือไม่?`)) {
       await deleteDoc(doc(db, `rooms/${currentRoom}/players`, playerId));
     }

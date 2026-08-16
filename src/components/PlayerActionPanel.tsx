@@ -10,18 +10,19 @@ const cardImages = {
 
 const actionCharacterMap = { "Tax": "Duke", "Assassinate": "Assassin", "Steal": "Captain", "Exchange": "Ambassador" };
 
-const formatGameTime = (totalSeconds) => {
+const formatGameTime = (totalSeconds: number) => {
   const mins = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
   const secs = String(totalSeconds % 60).padStart(2, '0');
   return `${mins}:${secs}`;
 };
 
-export default function PlayerActionPanel({ 
-  gameState, isMyTurn, myPlayer, players, roomData, userToken, timeLeft, actionToConfirm, targetAction, isProcessing, 
-  selectedAmbassadorCards, performAction, handleActionClick, handleTargetSelect, setTargetAction, setActionToConfirm, 
-  handleVotePass, handleChallenge, handleBlock, submitDiscard, handleToggleExchangeCard, confirmExchange,
-  gameTime
-}) {
+export default function PlayerActionPanel(props: any) {
+  const { 
+    gameState, isMyTurn, myPlayer, players, roomData, userToken, timeLeft, actionToConfirm, targetAction, isProcessing, 
+    selectedAmbassadorCards, performAction, handleActionClick, handleTargetSelect, setTargetAction, setActionToConfirm, 
+    handleVotePass, handleChallenge, handleBlock, submitDiscard, handleToggleExchangeCard, confirmExchange,
+    gameTime
+  } = props;
   const [showPeekCards, setShowPeekCards] = useState(false);
 
   useEffect(() => {
@@ -96,7 +97,7 @@ export default function PlayerActionPanel({
         </div>
 
         <div className="flex gap-3 lg:gap-5 transition-all duration-400">
-          {myPlayer?.cards?.map((c, i) => (
+          {myPlayer?.cards?.map((c: any, i: number) => (
             <div key={i} className={`rounded-[15px] border border-[rgba(212,175,55,0.3)] shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition-smooth bg-cover bg-center flex items-end justify-center p-2.5 lg:p-[15px] ${needsActionSpace ? 'w-[75px] h-[110px] sm:w-[90px] sm:h-[130px]' : 'w-[100px] h-[145px] sm:w-[140px] sm:h-[200px]'} ${c.isDead ? 'opacity-30 grayscale' : 'opacity-100 grayscale-0'}`} style={{ 
               backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.9)), url(${cardImages[c.character] || ''})`
             }}>
@@ -150,7 +151,7 @@ export default function PlayerActionPanel({
             <div className="text-center w-full">
               <h3 className="mt-0 text-[#fca5a5] text-[16px]">💀 เลือกไพ่ที่จะทิ้ง</h3>
               <div className="flex justify-center gap-[15px] mt-[15px]">
-                {myPlayer.cards.map((c, i) => !c.isDead && (
+                {myPlayer.cards.map((c: any, i: number) => !c.isDead && (
                   <button key={i} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl text-white min-w-[130px] cursor-pointer transition-smooth overflow-hidden flex-none w-[130px] text-center !border-[#ef4444] py-[10px] px-[14px]" disabled={isDead || isProcessing} onClick={() => submitDiscard(i)}>
                     ทิ้ง {c.character}
                   </button>
@@ -164,7 +165,7 @@ export default function PlayerActionPanel({
             <div className="text-center w-full">
               <h3 className="text-[#d4af37] mt-0 text-[16px]">🔄 เลือกไพ่ที่จะเก็บไว้ {myPlayer.cards.filter(c => !c.isDead).length} ใบ</h3>
               <div className="flex gap-[10px] justify-center flex-wrap my-[15px]">
-                {[...myPlayer.cards.filter(c => !c.isDead), ...(roomData.drawnCards || [])].map((c, i) => {
+                {[...myPlayer.cards.filter(c => !c.isDead), ...(roomData.drawnCards || [])].map((c: any, i: number) => {
                   const isSelected = selectedAmbassadorCards.includes(i);
                   return (
                     <div key={i} onClick={() => !isProcessing && handleToggleExchangeCard(i)} 
@@ -273,7 +274,7 @@ export default function PlayerActionPanel({
 
             {showPeekCards && (
               <div className="flex gap-4 justify-center mb-6 p-4 bg-black/40 rounded-xl border border-white/10 animate-fade-in max-w-[320px] mx-auto">
-                {myPlayer?.cards?.map((c, i) => (
+                {myPlayer?.cards?.map((c: any, i: number) => (
                   <div key={i} className={`relative rounded-lg border border-[rgba(212,175,55,0.3)] w-[90px] h-[130px] bg-cover bg-center flex items-end justify-center p-3 transition-smooth ${c.isDead ? 'opacity-30 grayscale' : 'opacity-100 grayscale-0'}`} style={{ 
                     backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.9)), url(${cardImages[c.character] || ''})`
                   }}>

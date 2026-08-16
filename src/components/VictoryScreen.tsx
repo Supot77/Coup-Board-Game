@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function VictoryScreen({ winnerName, isAdmin, onAdminReset }) {
+export default function VictoryScreen({ winnerName, isAdmin, onAdminReset }: { winnerName: string; isAdmin: boolean; onAdminReset: () => void }) {
   return (
     <div className="fixed inset-0 w-screen h-screen victory-bg z-[10000] flex items-center justify-center">
       <div className="absolute inset-0 w-full h-full victory-overlay-gradient flex items-center justify-center">

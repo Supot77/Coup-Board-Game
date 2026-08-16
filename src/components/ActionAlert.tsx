@@ -1,7 +1,20 @@
 // components/ActionAlert.jsx
 import React from 'react';
+import { Player } from '../types';
 
-export default function ActionAlert({ gameState, pendingAction, players }) {
+interface ActionAlertProps {
+  gameState: string;
+  pendingAction: {
+    sourceId: string;
+    targetId?: string;
+    blockerId?: string;
+    actionName: string;
+    blockCharacter?: string;
+  };
+  players: Player[];
+}
+
+export default function ActionAlert({ gameState, pendingAction, players }: ActionAlertProps) {
   // หากไม่มีแอคชั่นค้างอยู่ หรือไม่ได้อยู่ในสถานะรอการตอบสนอง ให้ซ่อนป้ายนี้ไป
   if (!pendingAction) return null;
   if (gameState !== "waiting_for_responses" && gameState !== "waiting_for_block_responses") return null;

@@ -1,0 +1,46 @@
+export interface User {
+  token: string;
+  name: string;
+}
+
+export interface Card {
+  character: string;
+  isDead: boolean;
+}
+
+export interface Player {
+  id: string;
+  name: string;
+  coins: number;
+  cards: Card[];
+  isAlive: boolean;
+  isDead?: boolean;
+  isReady?: boolean;
+}
+
+export interface GameState {
+  status: 'waiting' | 'playing' | 'finished';
+  turnIndex: number;
+  players: Record<string, Player>;
+  deck?: string[];
+  actionQueue?: any[];
+  winner?: string;
+  history?: any[];
+}
+
+export interface RoomData {
+  id?: string;
+  name?: string;
+  code?: string;
+  adminId?: string;
+  gameState?: GameState | string;
+  players?: Record<string, Player>;
+  createdAt?: any;
+  status?: string;
+  turnOrder?: string[];
+  currentTurnIndex?: number;
+  deck?: string[];
+  actionQueue?: any[];
+  winner?: string;
+  history?: any[];
+}

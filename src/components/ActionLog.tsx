@@ -1,7 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 
-export default function ActionLog({ historyLog, gameState, alivePlayers, roomData }) {
-  const logEndRef = useRef(null);
+interface ActionLogProps {
+  historyLog: any[];
+  gameState: string;
+  alivePlayers: any[];
+  roomData: any;
+}
+
+export default function ActionLog({ historyLog, gameState, alivePlayers, roomData }: ActionLogProps) {
+  const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });

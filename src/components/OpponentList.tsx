@@ -1,7 +1,9 @@
 import React from 'react';
 
+import { Player, RoomData } from '../types';
+
 // ดึงรูปภาพมาใช้เฉลยการ์ดที่ตายแล้วให้สวยงาม
-const cardImages = {
+const cardImages: Record<string, string> = {
   "Duke": "/img/duk.jpg",
   "Assassin": "/img/ass.jpg",
   "Captain": "/img/cap.jpg",
@@ -9,7 +11,13 @@ const cardImages = {
   "Contessa": "/img/cont.jpg"
 };
 
-export default function OpponentList({ players, userToken, roomData }) {
+interface OpponentListProps {
+  players: Player[];
+  userToken: string;
+  roomData: RoomData;
+}
+
+export default function OpponentList({ players, userToken, roomData }: OpponentListProps) {
   return (
     <div className="bg-white/[0.03] border border-white/[0.06] rounded-[20px] p-5 relative box-border">
       <div className="text-[#888] text-xs uppercase tracking-[2px] font-semibold mb-4 flex items-center gap-2">👥 PLAYERS</div>

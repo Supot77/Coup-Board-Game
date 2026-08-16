@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { User } from '../types';
 
-export default function Login({ onLoginSuccess }) {
-  const [username, setUsername] = useState("");
+export default function Login({ onLoginSuccess }: { onLoginSuccess: (user: User) => void }) {
+  const [username, setUsername] = useState<string>("");
 
   useEffect(() => {
     const savedName = localStorage.getItem('coup_player_name');

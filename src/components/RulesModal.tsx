@@ -1,9 +1,9 @@
 import React, { useEffect } from 'react';
 
-export default function RulesModal({ onClose }) {
+export default function RulesModal({ onClose }: { onClose: () => void }) {
   // ปิด Modal เมื่อกดปุ่ม ESC
   useEffect(() => {
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);

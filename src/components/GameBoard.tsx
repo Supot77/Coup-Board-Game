@@ -8,13 +8,13 @@ import OpponentList from './OpponentList.jsx';
 import ActionLog from './ActionLog.jsx';
 import PlayerActionPanel from './PlayerActionPanel.jsx';
 
-const formatGameTime = (totalSeconds) => {
+const formatGameTime = (totalSeconds: number) => {
   const mins = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
   const secs = String(totalSeconds % 60).padStart(2, '0');
   return `${mins}:${secs}`;
 };
 
-export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) {
+export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: any) {
   const [roomData, setRoomData] = useState(null);
   const [players, setPlayers] = useState([]);
   const [targetAction, setTargetAction] = useState(null);
@@ -134,7 +134,7 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }) 
     if (isWaitingForMe) {
       setTimeLeft(15);
       timer = setInterval(() => {
-        setTimeLeft((prev) => {
+        setTimeLeft((prev: any) => {
           if (prev <= 1) {
             clearInterval(timer);
             handleVotePass(); 

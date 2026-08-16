@@ -3,12 +3,13 @@ import Login from './components/Login';
 import Lobby from './components/Lobby';
 import GameBoard from './components/GameBoard';
 import RulesModal from './components/RulesModal';
+import { User } from './types';
 
 function App() {
-  const [currentView, setCurrentView] = useState('login');
-  const [user, setUser] = useState({ token: '', name: '' });
-  const [playingRoomCode, setPlayingRoomCode] = useState(null);
-  const [showRules, setShowRules] = useState(false);
+  const [currentView, setCurrentView] = useState<string>('login');
+  const [user, setUser] = useState<User>({ token: '', name: '' });
+  const [playingRoomCode, setPlayingRoomCode] = useState<string | null>(null);
+  const [showRules, setShowRules] = useState<boolean>(false);
 
   // เช็คว่าเคยล็อกอินค้างไว้ไหม
   useEffect(() => {
@@ -21,8 +22,8 @@ function App() {
   }, []);
 
   // ฟังก์ชันสลับไปหน้า Lobby
-  const handleLoginSuccess = (userData) => {
-    console.log("✅ App.jsx ได้รับข้อมูลแล้ว! กำลังสลับไปหน้า Lobby...");
+  const handleLoginSuccess = (userData: User) => {
+    console.log("✅ App.tsx ได้รับข้อมูลแล้ว! กำลังสลับไปหน้า Lobby...");
     setUser(userData);
     setCurrentView('lobby');
   };
@@ -35,7 +36,7 @@ function App() {
   };
 
   // ฟังก์ชันสลับไปหน้ากระดานเกม
-  const handleGameStart = (roomCode) => {
+  const handleGameStart = (roomCode: string) => {
     setPlayingRoomCode(roomCode);
     setCurrentView('game');
   };
@@ -50,7 +51,7 @@ function App() {
       {currentView === 'lobby' && <Lobby user={user} onLogout={handleLogout} onGameStart={handleGameStart} />}
       
       {/* ส่ง onShowRules เข้าไปใน GameBoard ด้วย */}
-      {currentView === 'game' && (
+      {currentView === 'game' && playingRoomCode && (
         <GameBoard 
           roomCode={playingRoomCode} 
           user={user} 
