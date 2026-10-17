@@ -1,63 +1,71 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import Login from './components/Login';
 import Lobby from './components/Lobby';
-import GameBoard from './components/GameBoard';
-import RulesModal from './components/RulesModal';
 import { User } from './types';
+import { useSession } from './components/SessionProvider';
+
+const RulesModal = lazy(() => import('./components/RulesModal'));
+const GameBoard = lazy(() => import('./components/GameBoard'));
 
 function App() {
+  const { authUser, isSessionReady, isSessionActive, logout } = useSession();
   const [currentView, setCurrentView] = useState<string>('login');
   const [user, setUser] = useState<User>({ token: '', name: '' });
   const [playingRoomCode, setPlayingRoomCode] = useState<string | null>(null);
   const [showRules, setShowRules] = useState<boolean>(false);
 
-  // เช็คว่าเคยล็อกอินค้างไว้ไหม
+  // Restore only an unexpired local guest session; an idle guest must press login again.
   useEffect(() => {
-    const token = localStorage.getItem('coup_session_token');
+    if (!isSessionReady) return;
     const name = localStorage.getItem('coup_player_name');
-    if (token && name) {
-      setUser({ token, name });
+    if (authUser && isSessionActive && name) {
+      setUser({ token: authUser.uid, name });
       setCurrentView('lobby');
+    } else if (!isSessionActive) {
+      setCurrentView('login');
     }
-  }, []);
+  }, [authUser, isSessionReady, isSessionActive]);
 
   // ฟังก์ชันสลับไปหน้า Lobby
-  const handleLoginSuccess = (userData: User) => {
+  const handleLoginSuccess = useCallback((userData: User) => {
     console.log("✅ App.tsx ได้รับข้อมูลแล้ว! กำลังสลับไปหน้า Lobby...");
     setUser(userData);
     setCurrentView('lobby');
-  };
+  }, []);
 
   // ฟังก์ชันออกจากระบบ
-  const handleLogout = () => {
-    localStorage.removeItem('coup_session_token');
-    localStorage.removeItem('coup_player_name');
+  const handleLogout = useCallback(async () => {
+    await logout();
+    setUser({ token: '', name: '' });
     setCurrentView('login');
-  };
+  }, [logout]);
 
   // ฟังก์ชันสลับไปหน้ากระดานเกม
-  const handleGameStart = (roomCode: string) => {
+  const handleGameStart = useCallback((roomCode: string) => {
     setPlayingRoomCode(roomCode);
     setCurrentView('game');
-  };
+  }, []);
+  const handleLeaveGame = useCallback(() => setCurrentView('lobby'), []);
 
   return (
     <>
       {/* หน้าต่างกติกา */}
-      {showRules && <RulesModal onClose={() => setShowRules(false)} />}
+      {showRules && <Suspense fallback={<p className="notice-reopen utility-button" role="status">กำลังโหลดกติกา…</p>}><RulesModal onClose={() => setShowRules(false)} /></Suspense>}
 
       {/* ควบคุมการแสดงผลหน้าจอหลัก */}
-      {currentView === 'login' && <Login onLoginSuccess={handleLoginSuccess} />}
-      {currentView === 'lobby' && <Lobby user={user} onLogout={handleLogout} onGameStart={handleGameStart} />}
+      {currentView === 'login' && <Login onLoginSuccess={handleLoginSuccess} onShowRules={() => setShowRules(true)} />}
+      {currentView === 'lobby' && <Lobby user={user} onLogout={handleLogout} onGameStart={handleGameStart} onShowRules={() => setShowRules(true)} />}
       
       {/* ส่ง onShowRules เข้าไปใน GameBoard ด้วย */}
       {currentView === 'game' && playingRoomCode && (
+        <Suspense fallback={<p className="notice-reopen utility-button" role="status">กำลังโหลดกระดานเกม…</p>}>
         <GameBoard 
           roomCode={playingRoomCode} 
           user={user} 
-          onLeaveGame={() => setCurrentView('lobby')} 
+          onLeaveGame={handleLeaveGame}
           onShowRules={() => setShowRules(true)} 
         />
+        </Suspense>
       )}
     </>
   );

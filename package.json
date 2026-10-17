@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:session": "node --test tests/session-clock.test.mjs",
+    "test:rules": "firebase emulators:exec --project demo-coup-rules --only firestore \"node --test tests/rules/firestore.rules.test.mjs\"",
+    "test:spark-engine": "node --test tests/spark/game-engine.test.mjs",
+    "test:spark": "firebase emulators:exec --project demo-coup --only firestore,auth \"node --test tests/spark/commands.test.mjs\""
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -18,12 +22,14 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^5.0.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "firebase-tools": "^15.34.0",
     "globals": "^17.5.0",
     "typescript": "^7.0.2",
     "vite": "^8.0.10"

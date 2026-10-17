@@ -1,8 +1,12 @@
-import { useState, useEffect } from 'react';
-import { doc, collection, onSnapshot, getDocs, getDoc, updateDoc, writeBatch, increment, arrayUnion, deleteDoc } from "firebase/firestore";
+import { useCallback, useEffect, useState } from 'react';
+import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../core/firebase';
-
-// Import ส่วนประกอบย่อย
+import { useDialog } from './DialogProvider';
+import { useSession } from './SessionProvider';
+import { getCallableMessage, resetGame } from '../core/roomCommands';
+import { submitGameCommand, waitForCommandResult, type GameCommand } from '../core/gameCommands';
+import { watchHostCommands } from '../core/hostCommandProcessor';
+import type { Card, Player, RoomData, User } from '../types';
 import VictoryScreen from './VictoryScreen.jsx';
 import OpponentList from './OpponentList.jsx';
 import ActionLog from './ActionLog.jsx';
@@ -14,410 +18,232 @@ const formatGameTime = (totalSeconds: number) => {
   return `${mins}:${secs}`;
 };
 
-export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: any) {
-  const [roomData, setRoomData] = useState(null);
-  const [players, setPlayers] = useState([]);
-  const [targetAction, setTargetAction] = useState(null);
-  const [selectedAmbassadorCards, setSelectedAmbassadorCards] = useState([]);
+export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: {
+  roomCode: string; user: User; onLeaveGame: () => void; onShowRules: () => void;
+}) {
+  const { notify, confirm } = useDialog();
+  const { setIdleExempt } = useSession();
+  const [roomData, setRoomData] = useState<any>(null);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [privateCards, setPrivateCards] = useState<Card[]>([]);
+  const [exchangeOptions, setExchangeOptions] = useState<Card[]>([]);
+  const [targetAction, setTargetAction] = useState<string | null>(null);
+  const [selectedAmbassadorCards, setSelectedAmbassadorCards] = useState<number[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(null);
-  const [actionToConfirm, setActionToConfirm] = useState(null);
-  const [historyLog, setHistoryLog] = useState([]);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [actionToConfirm, setActionToConfirm] = useState<string | null>(null);
+  const [historyLog, setHistoryLog] = useState<{ raw: string; text: string }[]>([]);
   const [gameTime, setGameTime] = useState(0);
-  const [activeMobileTab, setActiveMobileTab] = useState('board'); // 'board' | 'players' | 'log'
+  const [activeMobileTab, setActiveMobileTab] = useState('board');
+  const [victoryOpen, setVictoryOpen] = useState(true);
 
   useEffect(() => {
-    if (!roomData?.gameStartedAt || roomData?.gameState === "game_over") {
+    const roomRef = doc(db, 'rooms', roomCode);
+    const playersRef = collection(db, `rooms/${roomCode}/players`);
+    const privateRef = doc(db, `rooms/${roomCode}/privatePlayers/${user.token}`);
+    const unsubRoom = onSnapshot(roomRef, snapshot => {
+      if (!snapshot.exists()) {
+        localStorage.removeItem('coup_current_room');
+        notify('ห้องนี้ปิดแล้ว กรุณาสร้างห้องใหม่หรือเข้าห้องอื่น');
+        onLeaveGame();
+        return;
+      }
+      const data = snapshot.data();
+      setRoomData(data);
+      if (data.gameState !== 'game_over') setVictoryOpen(true);
+      if (data.status === 'lobby') onLeaveGame();
+      if (data.actionLog) {
+        setHistoryLog(previous => {
+          if (previous[previous.length - 1]?.raw === data.actionLog) return previous;
+          const elapsed = data.gameStartedAt ? Math.max(0, Math.floor((Date.now() - data.gameStartedAt) / 1000)) : 0;
+          return [...previous, { raw: data.actionLog, text: `[${formatGameTime(elapsed)}] ${data.actionLog}` }];
+        });
+      }
+    }, error => {
+      notify(getCallableMessage(error));
+      onLeaveGame();
+    });
+    const unsubPlayers = onSnapshot(playersRef, snapshot => {
+      setPlayers(snapshot.docs.map(player => ({ id: player.id, ...player.data() }) as Player));
+    }, error => notify(getCallableMessage(error)));
+    const unsubPrivate = onSnapshot(privateRef, snapshot => {
+      const data = snapshot.data();
+      setPrivateCards((data?.cards ?? []) as Card[]);
+      setExchangeOptions((data?.exchangeOptions ?? []) as Card[]);
+    }, error => notify(getCallableMessage(error)));
+    return () => { unsubRoom(); unsubPlayers(); unsubPrivate(); };
+  }, [roomCode, user.token, notify, onLeaveGame]);
+
+  useEffect(() => {
+    if (roomData?.status !== 'playing' || roomData?.adminId !== user.token) return;
+    return watchHostCommands(roomCode, user.token, error => notify(getCallableMessage(error)));
+  }, [roomCode, roomData?.status, roomData?.adminId, user.token, notify]);
+
+  useEffect(() => {
+    if (!roomData?.gameStartedAt || roomData?.gameState === 'game_over') {
       setGameTime(0);
       return;
     }
-
-    const updateTimer = () => {
-      const elapsed = Math.floor((Date.now() - roomData.gameStartedAt) / 1000);
-      setGameTime(elapsed >= 0 ? elapsed : 0);
-    };
-
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-
-    return () => clearInterval(interval);
+    const tick = () => setGameTime(Math.max(0, Math.floor((Date.now() - roomData.gameStartedAt) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
   }, [roomData?.gameStartedAt, roomData?.gameState]);
 
-  useEffect(() => {
-    const roomRef = doc(db, "rooms", roomCode);
-    const playersRef = collection(db, `rooms/${roomCode}/players`);
-
-    const unsubRoom = onSnapshot(roomRef, async (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setRoomData(data);
-        setIsProcessing(false);
-
-        if (data.status === "lobby") {
-          onLeaveGame();
-          return;
-        }
-
-        if (data.actionLog) {
-          setHistoryLog(prev => {
-            const lastLog = prev[prev.length - 1];
-            if (lastLog?.raw !== data.actionLog) {
-              const elapsedSeconds = data.gameStartedAt
-                ? Math.floor((Date.now() - data.gameStartedAt) / 1000)
-                : 0;
-              const mins = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
-              const secs = String(elapsedSeconds % 60).padStart(2, '0');
-              const timeString = `${mins}:${secs}`;
-              return [...prev, { raw: data.actionLog, text: `[${timeString}] ${data.actionLog}` }];
-            }
-            return prev;
-          });
-        }
-
-        if (data.gameState === "setup_phase" && data.adminId === user.token) {
-          const pSnap = await getDocs(playersRef);
-          const batch = writeBatch(db);
-          let turnOrder = [];
-          const baseDeck = ['Duke','Duke','Duke', 'Assassin','Assassin','Assassin', 'Captain','Captain','Captain', 'Ambassador','Ambassador','Ambassador', 'Contessa','Contessa','Contessa'];
-          let currentDeck = baseDeck.sort(() => Math.random() - 0.5);
-
-          pSnap.forEach((pDoc) => {
-            turnOrder.push(pDoc.id);
-            batch.update(pDoc.ref, { 
-              cards: [ { character: currentDeck.pop(), isDead: false, id: Date.now()+Math.random() }, 
-                       { character: currentDeck.pop(), isDead: false, id: Date.now()+Math.random()+1 } ],
-              coins: 2, isDead: false
-            });
-          });
-          batch.update(roomRef, { 
-            deck: currentDeck, 
-            turnOrder: turnOrder.sort(() => Math.random() - 0.5), 
-            currentTurnIndex: 0, 
-            gameState: "waiting_for_action", 
-            actionLog: "🔥 เริ่มเกมได้! ขอให้โชคดี!",
-            gameStartedAt: Date.now()
-          });
-          await batch.commit();
-        }
-      }
-    });
-
-    const unsubPlayers = onSnapshot(playersRef, (snapshot) => {
-      let pList = [];
-      snapshot.forEach(docSnap => pList.push({ id: docSnap.id, ...docSnap.data() }));
-      setPlayers(pList);
-    });
-
-    return () => { unsubRoom(); unsubPlayers(); };
-  }, [roomCode, user.token]);
-
-  const myPlayer = players.find(p => p.id === user.token);
-  const alivePlayers = players.filter(p => !p.isDead);
-  const isMyTurn = roomData?.turnOrder?.[roomData?.currentTurnIndex] === user.token;
+  const basePlayer = players.find(player => player.id === user.token);
+  const myPlayer = basePlayer ? { ...basePlayer, cards: privateCards } : undefined;
+  const displayPlayers = players.map(player => player.id === user.token ? { ...player, cards: privateCards } : player);
+  const alivePlayers = players.filter(player => !player.isDead);
   const gameState = roomData?.gameState;
+  const isMyTurn = roomData?.turnOrder?.[roomData?.currentTurnIndex] === user.token;
+  const responding = gameState === 'waiting_for_responses' || gameState === 'waiting_for_block_responses';
+  const myResponsePassed = roomData?.passVotes?.includes(user.token);
+  const waitingForMe = !basePlayer?.isDead && responding && !myResponsePassed
+    && !(gameState === 'waiting_for_responses' && roomData?.pendingAction?.sourceId === user.token)
+    && !(gameState === 'waiting_for_block_responses' && roomData?.pendingAction?.blockerId === user.token);
 
   useEffect(() => {
-    if (gameState !== "game_over" && alivePlayers.length === 1 && players.length > 1) {
-      updateDoc(doc(db, "rooms", roomCode), { gameState: "game_over" });
-    }
-  }, [gameState, alivePlayers.length, players.length, roomCode]);
+    if (!roomData || !basePlayer) { setIdleExempt(false); return; }
+    let exempt = false;
+    if (gameState === 'waiting_for_action' || gameState === 'waiting_for_exchange') exempt = !isMyTurn;
+    else if (gameState === 'waiting_for_discard') exempt = roomData.discardTarget !== user.token;
+    else if (responding) exempt = !!basePlayer.isDead || !waitingForMe;
+    setIdleExempt(exempt);
+  }, [roomData, basePlayer, gameState, isMyTurn, responding, waitingForMe, user.token, setIdleExempt]);
+
+  const runCommand = useCallback(async (command: GameCommand): Promise<boolean> => {
+    setIsProcessing(true);
+    try {
+      const { commandId } = await submitGameCommand(roomCode, user.token, command);
+      await waitForCommandResult(roomCode, commandId, user.token);
+      return true;
+    } catch (error) {
+      notify(getCallableMessage(error));
+      return false;
+    } finally { setIsProcessing(false); }
+  }, [roomCode, user.token, notify]);
+
+  const handleVotePass = useCallback(() => runCommand({ type: 'respond', response: 'pass' }), [runCommand]);
 
   useEffect(() => {
-    let timer;
-    const isWaitingForMe = 
-      !myPlayer?.isDead &&
-      (gameState === "waiting_for_responses" || gameState === "waiting_for_block_responses") && 
-      !roomData?.passVotes?.includes(user.token) &&
-      !(gameState === "waiting_for_responses" && roomData?.pendingAction?.sourceId === user.token) &&
-      !(gameState === "waiting_for_block_responses" && roomData?.pendingAction?.blockerId === user.token);
+    if (!waitingForMe || isProcessing) { setTimeLeft(null); return; }
+    setTimeLeft(15);
+    const timer = window.setInterval(() => {
+      setTimeLeft(previous => {
+        if (previous === null || previous <= 1) {
+          window.clearInterval(timer);
+          void handleVotePass();
+          return 0;
+        }
+        return previous - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [waitingForMe, roomData?.passVotes, roomData?.pendingAction?.blockerId, isProcessing, handleVotePass]);
 
-    if (isWaitingForMe) {
-      setTimeLeft(15);
-      timer = setInterval(() => {
-        setTimeLeft((prev: any) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            handleVotePass(); 
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      setTimeLeft(null);
-    }
-    return () => clearInterval(timer);
-  }, [gameState, roomData?.passVotes, user.token, myPlayer?.isDead]);
-
-  useEffect(() => {
-    if ((gameState === "waiting_for_responses" && roomData?.pendingAction?.sourceId === user.token) || 
-        (gameState === "waiting_for_block_responses" && roomData?.pendingAction?.blockerId === user.token)) {
-      if (roomData.passVotes?.length >= alivePlayers.length - 1) {
-        if (gameState === "waiting_for_responses") resolveAction(roomData.pendingAction);
-        else passTurn(`ทุกคนยอมรับการบล็อก Action ถูกยกเลิก`);
-      }
-    }
-  }, [roomData?.passVotes, gameState, alivePlayers.length]);
-
-  const passTurn = async (msg) => {
-    let nextIndex = roomData.currentTurnIndex;
-    for (let i = 0; i < roomData.turnOrder.length; i++) {
-      nextIndex = (nextIndex + 1) % roomData.turnOrder.length;
-      if (!players.find(p => p.id === roomData.turnOrder[nextIndex])?.isDead) break;
-    }
-    await updateDoc(doc(db, "rooms", roomCode), { currentTurnIndex: nextIndex, gameState: "waiting_for_action", pendingAction: null, passVotes: [], drawnCards: [], actionLog: msg });
-  };
-
-  const triggerDiscard = async (targetId, reasonLog, afterState, payload) => {
-    await updateDoc(doc(db, "rooms", roomCode), { gameState: "waiting_for_discard", discardTarget: targetId, actionLog: reasonLog, afterDiscardState: afterState, afterDiscardPayload: payload || null });
-  };
-
-  const performAction = async (actionName) => {
-    if (myPlayer.coins >= 10 && actionName !== "Coup") {
-      alert("มี 10 เหรียญแล้ว บังคับใช้ Coup เท่านั้น!");
-      setActionToConfirm(null);
+  const performAction = async (actionName: string) => {
+    if (['Assassinate', 'Steal', 'Coup'].includes(actionName)) {
+      setTargetAction(actionName);
       return;
     }
-    setIsProcessing(true);
-    if (actionName === "Income") {
-      await updateDoc(doc(db, `rooms/${roomCode}/players`, user.token), { coins: increment(1) });
-      return passTurn(`💰 ${myPlayer.name} รับ Income (+1)`);
-    }
-    if (["Assassinate", "Steal", "Coup"].includes(actionName)) {
-      setTargetAction(actionName); 
-      setIsProcessing(false);
-      return;
-    }
-    await updateDoc(doc(db, "rooms", roomCode), {
-      gameState: "waiting_for_responses", 
-      pendingAction: { actionName, sourceId: user.token, targetId: null, blockerId: null, blockCharacter: null }, 
-      passVotes: [], actionLog: `📣 ${myPlayer.name} ประกาศใช้ ${actionName}`
-    });
+    await runCommand({ type: 'action', actionName });
   };
-
-  const handleActionClick = (actionName) => {
-    if (["Assassinate", "Coup"].includes(actionName)) setActionToConfirm(actionName);
-    else performAction(actionName);
+  const handleActionClick = (actionName: string) => {
+    if (['Assassinate', 'Coup'].includes(actionName)) setActionToConfirm(actionName);
+    else void performAction(actionName);
   };
-
-  const handleTargetSelect = async (targetId) => {
-    setIsProcessing(true);
+  const handleTargetSelect = async (targetId: string) => {
+    if (!targetAction) return;
     const actionName = targetAction;
-    const targetName = players.find(p => p.id === targetId)?.name;
     setTargetAction(null);
-    if (actionName === "Coup") {
-      await updateDoc(doc(db, `rooms/${roomCode}/players`, user.token), { coins: increment(-7) });
-      return triggerDiscard(targetId, `⚔️ ${targetName} โดน Coup จาก ${myPlayer.name}!`, "waiting_for_action", true);
-    }
-    if (actionName === "Assassinate") await updateDoc(doc(db, `rooms/${roomCode}/players`, user.token), { coins: increment(-3) });
-    await updateDoc(doc(db, "rooms", roomCode), {
-      gameState: "waiting_for_responses", 
-      pendingAction: { actionName, sourceId: user.token, targetId, blockerId: null, blockCharacter: null }, 
-      passVotes: [], actionLog: `📣 ${myPlayer.name} ใช้ ${actionName} ใส่ ${targetName}!`
-    });
+    await runCommand({ type: 'action', actionName, targetId });
   };
-
-  const handleVotePass = async () => {
-    setIsProcessing(true);
-    await updateDoc(doc(db, "rooms", roomCode), { passVotes: arrayUnion(user.token) });
+  const handleChallenge = () => runCommand({ type: 'respond', response: 'challenge' });
+  const handleBlock = (character: string) => runCommand({ type: 'respond', response: 'block', character });
+  const submitDiscard = (cardIndex: number) => runCommand({ type: 'discard', cardIndex });
+  const handleToggleExchangeCard = (index: number) => {
+    const required = privateCards.filter(card => !card.isDead).length;
+    setSelectedAmbassadorCards(previous => previous.includes(index)
+      ? previous.filter(item => item !== index)
+      : previous.length < required ? [...previous, index] : previous);
   };
-
-  // --- [แก้ไขข้อ 1] จัดการการ Challenge และสลับไพ่ ---
-  const handleChallenge = async () => {
-    setIsProcessing(true);
-    const pending = roomData.pendingAction;
-    const actionCharacterMap = { "Tax": "Duke", "Assassinate": "Assassin", "Steal": "Captain", "Exchange": "Ambassador" };
-    const isChallengingBlock = gameState === "waiting_for_block_responses";
-    
-    const targetId = isChallengingBlock ? pending.blockerId : pending.sourceId;
-    const claimedChar = isChallengingBlock ? pending.blockCharacter : actionCharacterMap[pending.actionName];
-    const targetData = players.find(p => p.id === targetId);
-    
-    const revealedCardIndex = targetData.cards.findIndex(c => !c.isDead && c.character === claimedChar);
-    const hasCard = revealedCardIndex !== -1;
-
-    if (hasCard) {
-      // มีการ์ดจริงๆ -> สับการ์ดเดิมเข้ากอง และสุ่มจั่วใบใหม่มาแทนที่
-      let currentDeck = [...roomData.deck];
-      currentDeck.sort(() => Math.random() - 0.5); // สับก่อนจั่ว
-      const newCardChar = currentDeck.pop(); 
-      currentDeck.push(claimedChar); // เอาใบที่โชว์ไปใส่คืน
-      currentDeck.sort(() => Math.random() - 0.5); // สับอีกรอบให้เนียน
-
-      let newTargetCards = [...targetData.cards];
-      newTargetCards[revealedCardIndex] = { character: newCardChar, isDead: false, id: Date.now() };
-
-      const batch = writeBatch(db);
-      batch.update(doc(db, `rooms/${roomCode}/players`, targetId), { cards: newTargetCards });
-      batch.update(doc(db, "rooms", roomCode), { deck: currentDeck });
-      await batch.commit();
-
-      // บังคับคนท้าพลาดทิ้งไพ่
-      triggerDiscard(user.token, `🚨 ท้าพลาด! ${targetData.name} มี ${claimedChar} จริง! (ทำการสลับไพ่ใหม่แล้ว)`, isChallengingBlock ? "waiting_for_action" : "resolve_action", isChallengingBlock ? true : pending);
-    } else {
-      // ไม่มีหน้าไพ่จริงๆ โกหก -> บังคับคนโกหกทิ้งไพ่
-      triggerDiscard(targetId, `🚨 ท้าสำเร็จ! โกหก ไม่มี ${claimedChar}!`, isChallengingBlock ? "resolve_action" : "waiting_for_action", isChallengingBlock ? pending : true);
-    }
-  };
-
-  const handleBlock = async (character) => {
-    setIsProcessing(true);
-    await updateDoc(doc(db, "rooms", roomCode), {
-      gameState: "waiting_for_block_responses", 
-      pendingAction: { ...roomData.pendingAction, blockerId: user.token, blockCharacter: character }, 
-      passVotes: [], actionLog: `🛡️ ${myPlayer.name} บล็อกด้วย ${character}!`
-    });
-  };
-
-  // --- [แก้ไขข้อ 3] เช็คสถานะการตายก่อน Resolve ป้องกันตายซ้อนตาย ---
-  const resolveAction = async (pending) => {
-    const sourceRef = doc(db, `rooms/${roomCode}/players`, pending.sourceId);
-
-    // เช็คข้อมูลสดจาก DB ว่าเป้าหมายเสียชีวิตไปในขั้นตอนก่อนหน้า (เช่น ตอนชาเลนจ์) หรือยัง
-    if (pending.targetId) {
-      const targetSnap = await getDoc(doc(db, `rooms/${roomCode}/players`, pending.targetId));
-      if (targetSnap.exists() && targetSnap.data().isDead) {
-         return passTurn(`เป้าหมายเสียชีวิตและพ้นจากเกมไปแล้ว!`);
-      }
-    }
-
-    if (pending.actionName === "ForeignAid") { await updateDoc(sourceRef, { coins: increment(2) }); passTurn(`💰 รับ Foreign Aid`); }
-    else if (pending.actionName === "Tax") { await updateDoc(sourceRef, { coins: increment(3) }); passTurn(`💰 เก็บภาษีสำเร็จ`); }
-    else if (pending.actionName === "Steal") {
-      const targetSnap = await getDoc(doc(db, `rooms/${roomCode}/players`, pending.targetId));
-      const targetCoins = targetSnap.exists() ? targetSnap.data().coins : 0;
-      const stealAmount = targetCoins >= 2 ? 2 : targetCoins;
-      if (stealAmount > 0) {
-        await updateDoc(doc(db, `rooms/${roomCode}/players`, pending.targetId), { coins: increment(-stealAmount) });
-        await updateDoc(sourceRef, { coins: increment(stealAmount) });
-      }
-      passTurn(`🥷 ปล้นสำเร็จ ได้มา ${stealAmount} 💰`);
-    } else if (pending.actionName === "Assassinate") {
-      triggerDiscard(pending.targetId, `🔪 ลอบสังหารสำเร็จ!`, "waiting_for_action", true);
-    }
-    else if (pending.actionName === "Exchange") {
-      const deck = [...roomData.deck].sort(() => Math.random() - 0.5);
-      const drawn = [ { character: deck.pop(), isDead: false, id: Date.now() }, { character: deck.pop(), isDead: false, id: Date.now()+1 } ];
-      await updateDoc(doc(db, "rooms", roomCode), { deck, gameState: "waiting_for_exchange", drawnCards: drawn, actionLog: "🔄 Ambassador กำลังเลือกไพ่..." });
-    }
-  };
-
-  const submitDiscard = async (cardIndex) => {
-    setIsProcessing(true);
-    let newCards = [...myPlayer.cards];
-    newCards[cardIndex].isDead = true;
-    const isDead = newCards.filter(c => !c.isDead).length === 0;
-    await updateDoc(doc(db, `rooms/${roomCode}/players`, user.token), { cards: newCards, isDead });
-    
-    if (roomData.afterDiscardState === "waiting_for_action") {
-      await passTurn(`เหตุการณ์สงบลง`);
-    } else if (roomData.afterDiscardState === "resolve_action") {
-      await resolveAction(roomData.afterDiscardPayload);
-    }
-  };
-
-  const handleToggleExchangeCard = (idx) => {
-    setSelectedAmbassadorCards(prev => prev.includes(idx) ? prev.filter(i => i !== idx) : prev.length < myPlayer.cards.filter(c => !c.isDead).length ? [...prev, idx] : prev);
-  };
-
-  // --- [แก้ไขข้อ 2] รีเซ็ตการ์ดลงกองทันทีที่ Ambassador เปลี่ยนไพ่เสร็จ ---
   const confirmExchange = async () => {
-    setIsProcessing(true);
-    const alive = myPlayer.cards.filter(c => !c.isDead);
-    const pool = [...alive, ...roomData.drawnCards];
-    const finalCards = [...pool.filter((_, idx) => selectedAmbassadorCards.includes(idx)), ...myPlayer.cards.filter(c => c.isDead)];
-    
-    // คัดแยกไพ่ที่ไม่ถูกเลือก กลับเข้าใต้กองและสับ
-    const unselectedCards = pool.filter((_, idx) => !selectedAmbassadorCards.includes(idx)).map(c => c.character);
-    const newDeck = [...roomData.deck, ...unselectedCards].sort(() => Math.random() - 0.5);
-
-    const batch = writeBatch(db);
-    batch.update(doc(db, `rooms/${roomCode}/players`, user.token), { cards: finalCards });
-    // ตั้งค่า drawnCards เป็น [] ทันทีเพื่อล้างไพ่ออกจากระบบหน้าจอ UI
-    batch.update(doc(db, "rooms", roomCode), { deck: newDeck, drawnCards: [] });
-    await batch.commit();
-
-    setSelectedAmbassadorCards([]);
-    passTurn("🔄 สลับไพ่สำเร็จ");
+    if (await runCommand({ type: 'exchange', cardIndexes: selectedAmbassadorCards })) setSelectedAmbassadorCards([]);
   };
 
-  const handleAdminReset = async () => { if (window.confirm("ยุติเกมและกลับล็อบบี้?")) await updateDoc(doc(db, "rooms", roomCode), { status: "lobby", gameState: "setup_phase", actionLog: "รอเริ่มเกมใหม่..." }); };
-  const handleSurrender = async () => { if(window.confirm("ยอมแพ้?")) { await deleteDoc(doc(db, `rooms/${roomCode}/players`, user.token)); onLeaveGame(); } };
+  const handleAdminReset = async () => {
+    setVictoryOpen(false);
+    if (await confirm('ต้องการจบเกมนี้และกลับล็อบบี้หรือไม่?')) {
+      setIsProcessing(true);
+      try { await resetGame(roomCode, user.token); }
+      catch (error) { notify(getCallableMessage(error)); setIsProcessing(false); }
+    } else if (gameState === 'game_over') setVictoryOpen(true);
+  };
+  const handleSurrender = async () => {
+    if (!await confirm('ต้องการยอมแพ้และออกจากเกมหรือไม่?')) return;
+    setIsProcessing(true);
+    try {
+      const { commandId } = await submitGameCommand(roomCode, user.token, { type: 'surrender' });
+      await waitForCommandResult(roomCode, commandId, user.token);
+      localStorage.removeItem('coup_current_room');
+      onLeaveGame();
+    } catch (error) { notify(getCallableMessage(error)); setIsProcessing(false); }
+    finally { setIsProcessing(false); }
+  };
 
-  if (!roomData || !myPlayer) return <div>Loading...</div>;
-  if (gameState === "game_over") return <VictoryScreen winnerName={alivePlayers[0]?.name} isAdmin={roomData?.adminId === user.token} onAdminReset={handleAdminReset} />;
+  if (!roomData || !myPlayer) return <div>กำลังโหลดข้อมูลห้อง…</div>;
+  const roomForUi: RoomData = { ...roomData, drawnCards: undefined, exchangeOptions };
+  const canRespond = !myPlayer.isDead && waitingForMe;
 
   return (
-    <div className="gameboard-bg font-outfit text-[#e2e0e8] h-screen w-screen flex flex-col overflow-hidden fixed top-0 left-0">
-      <header className="h-[60px] lg:h-[70px] flex items-center justify-between px-3 lg:px-6 shrink-0 animate-fade-up border-b border-white/[0.03]">
+    <div className="gameboard-bg game-shell text-[#e2e0e8]">
+      <header className="game-header flex items-center justify-between px-3 lg:px-6 shrink-0 border-b border-white/[0.03]">
         <h1 className="font-cinzel text-dark-gold text-lg lg:text-2xl font-bold tracking-[1px] lg:tracking-[2px] m-0">COUP</h1>
         <div className="flex gap-1.5 lg:gap-[10px] items-center">
-          {roomData?.gameStartedAt && (
-            <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2 transition-all duration-200">
-              ⏱️ <span className="hidden sm:inline">เวลาเล่น:</span> {formatGameTime(gameTime)}
-            </div>
-          )}
-          <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2 transition-all duration-200">
-            🃏 <span className="hidden sm:inline">Court Deck:</span> {roomData?.deck?.length || 0}
-          </div>
-          <button className="bg-[rgba(241,196,15,0.15)] border border-[rgba(212,175,55,0.2)] text-[#f1c40f] py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2 transition-all duration-200 cursor-pointer" onClick={onShowRules}>
-            📖 <span className="hidden sm:inline">กติกา</span>
-          </button>
-          {roomData?.adminId === user.token && (
-            <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#fca5a5] py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2 transition-all duration-200 cursor-pointer" onClick={handleAdminReset}>
-              🔄 <span className="hidden sm:inline">ยุติเกม</span>
-            </button>
-          )}
-          <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2 transition-all duration-200 cursor-pointer" onClick={handleSurrender}>
-            🚪 <span className="hidden sm:inline">ออก</span>
-          </button>
+          {roomData.gameStartedAt && <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2">⏱️ <span className="hidden sm:inline">เวลาเล่น:</span> {formatGameTime(gameTime)}</div>}
+          <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2">🃏 <span className="hidden sm:inline">ไพ่กองกลาง:</span> {roomData.deckCount ?? 0}</div>
+          <button aria-label="เปิดกติกา" className="bg-[rgba(241,196,15,0.15)] border border-[rgba(212,175,55,0.2)] text-[#f1c40f] py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium cursor-pointer" onClick={onShowRules}>📖 <span className="hidden sm:inline">กติกา</span></button>
+          {roomData.adminId === user.token && <button aria-label="ยุติเกม" disabled={isProcessing} className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#fca5a5] py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium cursor-pointer" onClick={handleAdminReset}>🔄 <span className="hidden sm:inline">ยุติเกม</span></button>}
+          <button aria-label="ออกจากเกม" disabled={isProcessing} className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium cursor-pointer" onClick={handleSurrender}>🚪 <span className="hidden sm:inline">ออก</span></button>
         </div>
       </header>
 
-      {/* Mobile Tab Bar */}
-      <div className="flex lg:hidden justify-around bg-black/30 border-b border-white/[0.06] p-2 shrink-0 gap-2 px-3">
-        <button 
-          onClick={() => setActiveMobileTab('players')}
-          className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-fast cursor-pointer flex items-center justify-center gap-1.5 border ${activeMobileTab === 'players' ? 'bg-white/[0.06] text-[#f1c40f] border-[rgba(241,196,15,0.3)] shadow-lg' : 'text-white/60 hover:text-white border-transparent'}`}
-        >
-          👥 <span>ผู้เล่น</span>
-          <span className="bg-black/30 text-white/80 py-0.5 px-1.5 rounded-full text-[10px] font-bold">{players.length}</span>
-        </button>
-        <button 
-          onClick={() => setActiveMobileTab('board')}
-          className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-fast cursor-pointer flex items-center justify-center gap-1.5 border ${activeMobileTab === 'board' ? 'bg-white/[0.06] text-[#f1c40f] border-[rgba(241,196,15,0.3)] shadow-lg' : 'text-white/60 hover:text-white border-transparent'}`}
-        >
-          🎮 <span>สภา</span>
-        </button>
-        <button 
-          onClick={() => setActiveMobileTab('log')}
-          className={`flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-fast cursor-pointer flex items-center justify-center gap-1.5 border ${activeMobileTab === 'log' ? 'bg-white/[0.06] text-[#f1c40f] border-[rgba(241,196,15,0.3)] shadow-lg' : 'text-white/60 hover:text-white border-transparent'}`}
-        >
-          📜 <span>ประวัติ</span>
-        </button>
-      </div>
-
-      <div className="flex flex-col lg:flex-row gap-3 lg:gap-5 px-3 lg:px-6 pb-3 lg:pb-5 h-[calc(100vh-120px)] lg:h-[calc(100vh-70px)] box-border overflow-hidden mt-3 lg:mt-0">
-        <div className={`w-full lg:w-[260px] shrink-0 animate-fade-up lg:block ${activeMobileTab === 'players' ? 'block h-full overflow-y-auto' : 'hidden'}`}>
-          <OpponentList players={players} userToken={user.token} roomData={roomData} />
+      <nav className="mobile-tabs" aria-label="เมนูเกม">
+        {[
+          ['board', 'ไพ่ของฉัน', false],
+          ['actions', 'แอคชั่น', canRespond || (!myPlayer.isDead && (isMyTurn && gameState === 'waiting_for_action' || gameState === 'waiting_for_discard' && roomData.discardTarget === user.token || gameState === 'waiting_for_exchange' && isMyTurn))],
+          ['players', 'ผู้เล่น', false], ['log', 'ประวัติ', false],
+        ].map(([id, label, available]) => <button key={String(id)} type="button" aria-current={activeMobileTab === id ? 'page' : undefined} onClick={() => setActiveMobileTab(String(id))}>
+          {label}{available && <span className="action-ready">พร้อม</span>}
+        </button>)}
+      </nav>
+      {isProcessing && roomData.adminId !== user.token && <div className="event-banner mx-3 mt-2" role="status">
+        คำสั่งกำลังรอเจ้าของห้องออนไลน์เพื่อดำเนินการ
+      </div>}
+      {gameState === 'game_over' && <div className="event-banner mx-3 mt-2">
+        <span>จบเกม · ผู้ชนะ {alivePlayers[0]?.name}</span>
+        <button className="utility-button" onClick={() => setVictoryOpen(true)}>ดูผลเกม</button>
+      </div>}
+      <div className="game-workspace">
+        <div className={`game-column game-column-players desktop-column ${activeMobileTab === 'players' ? 'mobile-visible' : ''}`}>
+          <OpponentList players={displayPlayers} userToken={user.token} roomData={roomForUi} />
         </div>
-        
-        <div className={`flex-1 flex flex-col gap-[15px] h-full lg:flex ${activeMobileTab === 'board' ? 'flex' : 'hidden'}`}>
-          <PlayerActionPanel 
-            gameState={gameState} isMyTurn={isMyTurn} myPlayer={myPlayer} players={players} roomData={roomData} userToken={user.token} 
-            timeLeft={timeLeft} actionToConfirm={actionToConfirm} targetAction={targetAction} isProcessing={isProcessing} 
-            selectedAmbassadorCards={selectedAmbassadorCards} performAction={performAction} handleActionClick={handleActionClick} 
-            handleTargetSelect={handleTargetSelect} setTargetAction={setTargetAction} setActionToConfirm={setActionToConfirm} 
-            handleVotePass={handleVotePass} handleChallenge={handleChallenge} handleBlock={handleBlock} submitDiscard={submitDiscard} 
+        <div className={`game-column game-column-main ${['board', 'actions'].includes(activeMobileTab) ? 'mobile-visible' : ''}`}>
+          <PlayerActionPanel
+            gameState={gameState} isMyTurn={isMyTurn} myPlayer={myPlayer} players={players} roomData={roomForUi} userToken={user.token}
+            timeLeft={timeLeft} actionToConfirm={actionToConfirm} targetAction={targetAction} isProcessing={isProcessing}
+            selectedAmbassadorCards={selectedAmbassadorCards} performAction={performAction} handleActionClick={handleActionClick}
+            handleTargetSelect={handleTargetSelect} setTargetAction={setTargetAction} setActionToConfirm={setActionToConfirm}
+            handleVotePass={handleVotePass} handleChallenge={handleChallenge} handleBlock={handleBlock} submitDiscard={submitDiscard}
             handleToggleExchangeCard={handleToggleExchangeCard} confirmExchange={confirmExchange}
-            gameTime={gameTime}
+            gameTime={gameTime} showActionsOnly={activeMobileTab === 'actions'}
           />
         </div>
-        
-        <div className={`w-full lg:w-[280px] shrink-0 animate-fade-up lg:block ${activeMobileTab === 'log' ? 'block h-full' : 'hidden'}`}>
-          <ActionLog historyLog={historyLog} gameState={gameState} alivePlayers={alivePlayers} roomData={roomData} />
+        <div className={`game-column game-column-log desktop-column ${activeMobileTab === 'log' ? 'mobile-visible' : ''}`}>
+          <ActionLog historyLog={historyLog} gameState={gameState} alivePlayers={alivePlayers} roomData={roomForUi} />
         </div>
       </div>
+      {gameState === 'game_over' && victoryOpen && <VictoryScreen winnerName={alivePlayers[0]?.name} isAdmin={roomData.adminId === user.token} onAdminReset={handleAdminReset} onClose={() => setVictoryOpen(false)} />}
     </div>
   );
 }

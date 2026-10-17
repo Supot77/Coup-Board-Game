@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { browserLocalPersistence, getAuth } from "firebase/auth";
 
 const firebaseConfig = {
     apiKey: "AIzaSyCMbHtH0xIFYerC6Pq53w6X3zlS8U75vsg",
@@ -17,3 +18,5 @@ const app = initializeApp(firebaseConfig);
 
 // ส่งออก (Export) db เพื่อให้ Component อื่นๆ เรียกใช้งานได้
 export const db = getFirestore(app);
+export const auth = getAuth(app);
+export const authPersistence = browserLocalPersistence;

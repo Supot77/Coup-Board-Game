@@ -1,325 +1,197 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import Modal from './Modal';
+import HandGuide from './HandGuide';
+import RoleBadge from './RoleBadge';
+import { actionHelp as actions, getActionLabel, getLivingRoles, getPassConsequence } from '../core/gameHelp';
 
-const cardImages = {
-  "Duke": "/img/duk.jpg",
-  "Assassin": "/img/ass.jpg",
-  "Captain": "/img/cap.jpg",
-  "Ambassador": "/img/amb.jpg",
-  "Contessa": "/img/cont.jpg"
+const cardImages: Record<string, string> = {
+  Duke: '/img/duk.jpg', Assassin: '/img/ass.jpg', Captain: '/img/cap.jpg',
+  Ambassador: '/img/amb.jpg', Contessa: '/img/cont.jpg',
 };
 
-const actionCharacterMap = { "Tax": "Duke", "Assassinate": "Assassin", "Steal": "Captain", "Exchange": "Ambassador" };
-
-const formatGameTime = (totalSeconds: number) => {
-  const mins = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
-  const secs = String(totalSeconds % 60).padStart(2, '0');
-  return `${mins}:${secs}`;
-};
+function Hand({ cards, small = false }: { cards: any[]; small?: boolean }) {
+  return <div className={`influence-cards ${small ? 'small-hand' : ''}`}>
+    {cards?.map((card, index) => <div key={index} className={`influence-card ${card.isDead ? 'influence-dead' : ''}`}>
+      <img src={cardImages[card.character]} alt="" />
+      <span>{card.character}{card.isDead && <small>เปิดเผยแล้ว</small>}</span>
+    </div>)}
+  </div>;
+}
 
 export default function PlayerActionPanel(props: any) {
-  const { 
-    gameState, isMyTurn, myPlayer, players, roomData, userToken, timeLeft, actionToConfirm, targetAction, isProcessing, 
-    selectedAmbassadorCards, performAction, handleActionClick, handleTargetSelect, setTargetAction, setActionToConfirm, 
-    handleVotePass, handleChallenge, handleBlock, submitDiscard, handleToggleExchangeCard, confirmExchange,
-    gameTime
+  const {
+    gameState, isMyTurn, myPlayer, players, roomData, userToken, timeLeft, actionToConfirm,
+    targetAction, isProcessing, selectedAmbassadorCards, performAction, handleActionClick,
+    handleTargetSelect, setTargetAction, setActionToConfirm, handleVotePass, handleChallenge,
+    handleBlock, submitDiscard, handleToggleExchangeCard, confirmExchange, showActionsOnly,
   } = props;
+  const [category, setCategory] = useState('general');
+  const [popupOpen, setPopupOpen] = useState(true);
   const [showPeekCards, setShowPeekCards] = useState(false);
-
+  const pending = roomData.pendingAction;
+  const responding = gameState === 'waiting_for_responses' || gameState === 'waiting_for_block_responses';
   useEffect(() => {
-    if (gameState !== "waiting_for_responses" && gameState !== "waiting_for_block_responses") {
-      setShowPeekCards(false);
-    }
-  }, [gameState]);
+    setPopupOpen(true);
+    setShowPeekCards(false);
+  }, [gameState, pending?.actionName, pending?.sourceId, pending?.targetId, pending?.blockerId, pending?.blockCharacter]);
 
   const alivePlayers = players.filter(p => !p.isDead);
   const isDead = myPlayer?.isDead;
+  const ownedRoles = getLivingRoles(myPlayer?.cards, isDead);
+  const canTakeTurn = isMyTurn && !isDead && gameState === 'waiting_for_action';
+  const waitingForMe = !isDead && responding && !roomData.passVotes?.includes(userToken)
+    && !(gameState === 'waiting_for_responses' && pending?.sourceId === userToken)
+    && !(gameState === 'waiting_for_block_responses' && pending?.blockerId === userToken);
+  const discarding = !isDead && gameState === 'waiting_for_discard' && roomData.discardTarget === userToken;
+  const exchanging = !isDead && gameState === 'waiting_for_exchange' && isMyTurn;
+  const reasonDisabled = (action: typeof actions[number]) => {
+    if (isDead) return 'คุณตกรอบแล้ว';
+    if (isProcessing) return 'กำลังดำเนินการ';
+    if (!canTakeTurn) return 'รอถึงตาของคุณ';
+    if (myPlayer.coins >= 10 && action.name !== 'Coup') return 'มี 10 เหรียญ ต้อง Coup';
+    if (myPlayer.coins < action.cost) return `ต้องมี ${action.cost} เหรียญ`;
+    return '';
+  };
+  const source = players.find(p => p.id === pending?.sourceId);
+  const target = players.find(p => p.id === pending?.targetId);
+  const blocker = players.find(p => p.id === pending?.blockerId);
+  const blockRoles = gameState !== 'waiting_for_responses' ? []
+    : pending?.actionName === 'ForeignAid' ? ['Duke']
+    : pending?.targetId !== userToken ? []
+    : pending?.actionName === 'Assassinate' ? ['Contessa']
+    : pending?.actionName === 'Steal' ? ['Captain', 'Ambassador'] : [];
+  const challengeAllowed = gameState === 'waiting_for_block_responses' || ['Tax', 'Assassinate', 'Steal', 'Exchange'].includes(pending?.actionName);
+  const responseCount = waitingForMe && !isProcessing ? 1 + Number(challengeAllowed) + blockRoles.length : 0;
+  const heldBlockRoles = blockRoles.filter(role => ownedRoles.has(role));
+  const bluffBlockRoles = blockRoles.filter(role => !ownedRoles.has(role));
+  const claimedRole = gameState === 'waiting_for_block_responses' ? pending?.blockCharacter : actions.find(action => action.name === pending?.actionName)?.role;
+  const passConsequence = getPassConsequence(pending?.actionName, gameState === 'waiting_for_block_responses', pending?.targetId === userToken);
+  const responseContent = <>
+    <p className="event-description">
+      {gameState === 'waiting_for_block_responses'
+        ? <><b>{blocker?.name}</b> อ้างว่ามี <strong>{pending?.blockCharacter}</strong> เพื่อบล็อก {getActionLabel(pending?.actionName)} ของ {source?.name}</>
+        : <><b>{source?.name}</b> ใช้ <strong>{getActionLabel(pending?.actionName)}</strong>{target && <> กับ <b>{target.name}</b></>}</>}
+    </p>
+    {timeLeft !== null && !isDead && <p className="decision-clock" role="timer">เวลาตัดสินใจ {timeLeft} วินาที</p>}
+    {waitingForMe && <aside className="response-guide" aria-label="คำแนะนำการตอบโต้">
+      <h3>คุณตอบโต้ครั้งนี้ได้อย่างไร</h3>
+      <p>ไพ่ที่ยังใช้ได้ของคุณ: {[...ownedRoles].join(', ') || 'ไม่มี'}</p>
+      {gameState === 'waiting_for_block_responses'
+        ? <p>อีกฝ่ายประกาศบล็อกแล้ว คุณเลือกยอมรับการบล็อก หรือจับโกหกบทบาท {claimedRole} ได้</p>
+        : <>
+          {heldBlockRoles.length > 0 && <p className="held-role-advice">คุณมี {heldBlockRoles.join(' หรือ ')} จึงบล็อก {getActionLabel(pending?.actionName)} ครั้งนี้ด้วยไพ่จริงได้</p>}
+          {blockRoles.length > 0 && heldBlockRoles.length === 0 && <p>ไพ่ที่เหลือของคุณไม่มีบทบาทสำหรับบล็อกครั้งนี้</p>}
+          {bluffBlockRoles.length > 0 && <p>คุณยังอ้าง {bluffBlockRoles.join(' หรือ ')} เพื่อบล็อกได้ หากถูกจับโกหก คุณต้องเปิดเผยไพ่ 1 ใบ</p>}
+          {blockRoles.length === 0 && <p>{['Steal', 'Assassinate'].includes(pending?.actionName)
+            ? 'คุณไม่ได้เป็นเป้าหมาย จึงบล็อกครั้งนี้ไม่ได้'
+            : `${getActionLabel(pending?.actionName)} บล็อกไม่ได้`}</p>}
+        </>}
+      {pending?.actionName === 'Assassinate' && pending?.targetId === userToken && gameState === 'waiting_for_responses' && <p>ถ้าคุณจับโกหกผิด อาจเสียไพ่จากการท้าผิดและจากการลอบสังหาร รวม 2 ใบ</p>}
+      <details className="response-explanation">
+        <summary>อ่านผลของแต่ละตัวเลือก</summary>
+        <p>{passConsequence}</p>
+        {challengeAllowed && <p>จับโกหกคือขอตรวจว่าอีกฝ่ายมี {claimedRole} หรือไม่ ถ้าเขามี คุณต้องเปิดเผยไพ่ 1 ใบ ถ้าเขาไม่มี เขาต้องเปิดเผยไพ่ 1 ใบ</p>}
+        {pending?.actionName === 'ForeignAid' && gameState === 'waiting_for_responses' && <p>Foreign Aid ไม่ได้อ้างบทบาท จึงจับโกหกแอคชั่นนี้ไม่ได้ แต่ถ้ามีคนอ้าง Duke เพื่อบล็อก คุณจับโกหกการบล็อกนั้นได้</p>}
+      </details>
+    </aside>}
+    {waitingForMe ? <div className="response-buttons">
+      <button className="action-choice" disabled={isProcessing} onClick={handleVotePass} title={passConsequence}>ปล่อยผ่าน</button>
+      {challengeAllowed && <button className="action-choice danger-choice" disabled={isProcessing} onClick={handleChallenge} title={`ขอตรวจว่าอีกฝ่ายมี ${claimedRole} หรือไม่ หากท้าผิด คุณเสียไพ่ 1 ใบ`}>จับโกหก</button>}
+      {blockRoles.map(role => <button key={role} className="action-choice" disabled={isProcessing} onClick={() => handleBlock(role)} title={ownedRoles.has(role) ? `คุณมี ${role} ที่ยังใช้ได้` : `คุณไม่มี ${role} ที่ยังใช้ได้ ต้องสวมบทบาท`}><RoleBadge role={role} owned={ownedRoles.has(role)} /> บล็อก · {role}</button>)}
+    </div> : <p className="muted-copy">{isDead ? 'คุณตกรอบแล้ว สามารถดูเกมต่อได้' : 'รอผู้เล่นอื่นตัดสินใจ…'}</p>}
+    <button type="button" className="utility-button" aria-expanded={showPeekCards} onClick={() => setShowPeekCards(!showPeekCards)}>
+      {showPeekCards ? 'ซ่อนไพ่ในมือ' : 'ดูไพ่ในมือของฉัน'}
+    </button>
+    {showPeekCards && <Hand cards={myPlayer?.cards} small />}
+  </>;
 
-  let statusText = "";
-  let statusColor = "#d4af37"; 
-  
-  if (isDead) {
-    statusText = "💀 คุณเสียชีวิตแล้ว ได้แต่เฝ้าดูการต่อสู้";
-    statusColor = "#ef4444";
-  } else if (gameState === "waiting_for_action") {
-    statusText = isMyTurn ? "⭐ ตาของคุณแล้ว! เลือก Action" : `⏳ รอ ${players.find(p => p.id === roomData?.turnOrder?.[roomData?.currentTurnIndex])?.name} ตัดสินใจ`;
-    if(!isMyTurn) statusColor = "#888";
-  } else if (gameState === "waiting_for_responses" || gameState === "waiting_for_block_responses") {
-    statusText = roomData.pendingAction?.sourceId === userToken || roomData.pendingAction?.blockerId === userToken ? "⏳ รอคนอื่นตอบรับ..." : "🚨 มีเหตุการณ์เกิดขึ้น!";
-    if(roomData.pendingAction?.sourceId !== userToken && roomData.pendingAction?.blockerId !== userToken) statusColor = "#fca5a5";
-  } else if (gameState === "waiting_for_discard") {
-    statusText = roomData.discardTarget === userToken ? "💀 คุณต้องเลือกเสียอิทธิพล 1 ใบ!" : "💀 มีผู้เล่นกำลังเสียอิทธิพล";
-    if(roomData.discardTarget === userToken) statusColor = "#ef4444";
-  } else if (gameState === "waiting_for_exchange") {
-    statusText = isMyTurn ? "🔄 โปรดเลือกไพ่ที่จะเก็บไว้" : "⏳ รอ Ambassador ตัดสินใจ";
-    if(isMyTurn) statusColor = "#34d399";
-  }
+  let status = isDead ? 'คุณตกรอบแล้ว · ดูเกมต่อได้'
+    : discarding ? 'เลือกไพ่ที่จะเปิดเผย'
+    : exchanging ? 'เลือกไพ่ที่จะเก็บไว้'
+    : responding ? waitingForMe ? 'มีเหตุการณ์รอคุณตอบสนอง' : 'รอผู้เล่นอื่นตอบสนอง'
+    : canTakeTurn ? 'ถึงตาคุณแล้ว เลือกแอคชั่น'
+    : gameState === 'game_over' ? 'จบเกมแล้ว'
+    : `รอ ${players.find(p => p.id === roomData.turnOrder?.[roomData.currentTurnIndex])?.name || 'ผู้เล่น'} ตัดสินใจ`;
 
-  // ป้องกันคนตายโหวตด้วยการเพิ่ม !isDead เข้าไป
-  const isWaitingForMyResponse = !isDead && (gameState === "waiting_for_responses" || gameState === "waiting_for_block_responses") && 
-                                 !roomData.passVotes?.includes(userToken) && 
-                                 !(gameState === "waiting_for_responses" && roomData.pendingAction?.sourceId === userToken) && 
-                                 !(gameState === "waiting_for_block_responses" && roomData.pendingAction?.blockerId === userToken);
+  return <div className={`player-action-panel ${showActionsOnly ? 'actions-only' : ''}`}>
+    <section className="game-panel influence-panel" aria-label="ไพ่ของฉัน">
+      <h2 className="panel-heading">ไพ่ของคุณ <span>🪙 {myPlayer?.coins}</span></h2>
+      <p className="turn-status" aria-live="polite">{status}</p>
+      {!responding && timeLeft !== null && !isDead && <p className="decision-clock">เวลาตัดสินใจ {timeLeft} วินาที</p>}
+      <Hand cards={myPlayer?.cards} />
+    </section>
 
-  const needsActionSpace = !isDead && (
-    (isMyTurn && gameState === "waiting_for_action") || targetAction !== null || actionToConfirm !== null || 
-    (gameState === "waiting_for_discard" && roomData.discardTarget === userToken) || (gameState === "waiting_for_exchange" && isMyTurn)
-  );
+    <section className="game-panel actions-panel" aria-label="แอคชั่น">
+      <h2 className="panel-heading">แอคชั่น</h2>
+      <p className="role-legend"><span><RoleBadge role="" owned /> มีบทบาทนี้</span><span><RoleBadge role="" owned={false} /> สวมบทบาท</span></p>
+      {!responding && <HandGuide roles={ownedRoles} isDead={!!isDead} />}
+      <nav className="action-categories" aria-label="ประเภทแอคชั่น">
+        {[
+          ['general', 'ทั่วไป', actions.filter(a => a.role === 'ทั่วไป' && !reasonDisabled(a)).length],
+          ['roles', 'ตามบทบาท', actions.filter(a => a.role !== 'ทั่วไป' && !reasonDisabled(a)).length],
+          ['response', 'ตอบสนอง', responseCount],
+        ].map(([id, label, count]) => <button key={id} type="button" aria-pressed={category === id}
+          onClick={() => setCategory(String(id))} className={category === id ? 'category-active' : ''}>
+          {label}{Number(count) > 0 && <span className="category-count">{count}</span>}
+        </button>)}
+      </nav>
 
-  const sourcePlayer = roomData?.pendingAction ? players.find(p => p.id === roomData.pendingAction.sourceId) : null;
-  const targetPlayer = roomData?.pendingAction?.targetId ? players.find(p => p.id === roomData.pendingAction.targetId) : null;
-  const blockerPlayer = roomData?.pendingAction?.blockerId ? players.find(p => p.id === roomData.pendingAction.blockerId) : null;
-
-  return (
-    <div className="flex flex-col h-full gap-[15px]">
-      
-      {/* ================= โซน YOUR INFLUENCE ================= */}
-      <div className={`bg-white/[0.03] border border-white/[0.06] rounded-[20px] relative box-border pulse-glow transition-smooth flex flex-col justify-center items-center ${needsActionSpace ? 'flex-[0_1_auto] p-[15px]' : 'flex-1 p-5'}`}>
-        <div className="text-[#d4af37] text-xs uppercase tracking-[2px] font-semibold flex items-center gap-2 absolute top-[15px] left-[15px]">👤 YOUR INFLUENCE</div>
-        
-        <div className={`text-center transition-all duration-300 ${needsActionSpace ? 'mb-[10px]' : 'mb-[20px]'}`}>
-          <div className={`font-bold transition-all duration-300 ${needsActionSpace ? 'text-[14px] mb-[5px]' : 'text-[16px] mb-[10px]'}`} style={{ color: statusColor }}>
-            {statusText}
-          </div>
-          {!isDead && timeLeft !== null && (
-            <div className={`text-[14px] ${timeLeft <= 5 ? 'text-[#ef4444]' : 'text-[#d4af37]'} ${needsActionSpace ? 'mb-[5px]' : 'mb-[15px]'}`}>
-              ⏳ เวลาตัดสินใจ: {timeLeft} วิ
-            </div>
-          )}
-          {roomData?.gameStartedAt && (
-            <div className={`text-[13px] text-white/60 ${needsActionSpace ? 'mb-[5px]' : 'mb-[15px]'}`}>
-              ⏱️ เวลาเล่น: {formatGameTime(gameTime)}
-            </div>
-          )}
-          {/* โค้ดใหม่ที่ถูกต้อง */}
-          <div className={`text-[#d4af37] font-black transition-all duration-300 flex items-center justify-center gap-2 ${needsActionSpace ? 'text-[24px]' : 'text-[32px]'}`}>
-            <span className={`animate-coin-glow ${needsActionSpace ? 'text-[22px]' : 'text-[28px]'}`}>🪙</span> {myPlayer?.coins} Coins
-          </div>
+      {actionToConfirm ? <div className="action-step">
+        <h3>ยืนยันการใช้ {getActionLabel(actionToConfirm)}?</h3>
+        <p>ใช้ {actionToConfirm === 'Coup' ? 7 : 3} เหรียญเมื่อเลือกเป้าหมาย</p>
+        <div className="response-buttons">
+          <button className="action-choice" disabled={isDead || isProcessing} onClick={() => { performAction(actionToConfirm); setActionToConfirm(null); }}>ยืนยัน</button>
+          <button className="utility-button" disabled={isProcessing} onClick={() => setActionToConfirm(null)}>ยกเลิก</button>
         </div>
-
-        <div className="flex gap-3 lg:gap-5 transition-all duration-400">
-          {myPlayer?.cards?.map((c: any, i: number) => (
-            <div key={i} className={`rounded-[15px] border border-[rgba(212,175,55,0.3)] shadow-[0_10px_20px_rgba(0,0,0,0.5)] transition-smooth bg-cover bg-center flex items-end justify-center p-2.5 lg:p-[15px] ${needsActionSpace ? 'w-[75px] h-[110px] sm:w-[90px] sm:h-[130px]' : 'w-[100px] h-[145px] sm:w-[140px] sm:h-[200px]'} ${c.isDead ? 'opacity-30 grayscale' : 'opacity-100 grayscale-0'}`} style={{ 
-              backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.9)), url(${cardImages[c.character] || ''})`
-            }}>
-              <span className={`text-[#d4af37] font-bold font-cinzel [text-shadow:2px_2px_4px_black] transition-all duration-400 ${needsActionSpace ? 'text-[11px] sm:text-[13px]' : 'text-[14px] sm:text-[18px]'} ${c.isDead ? 'line-through' : 'no-underline'}`}>{c.character}</span>
+      </div> : targetAction ? <div className="action-step">
+        <h3>เลือกเป้าหมาย · {targetAction}</h3>
+        <div className="response-buttons">{alivePlayers.filter(p => p.id !== userToken).map(player => <button key={player.id}
+          className="action-choice" disabled={isDead || isProcessing} onClick={() => handleTargetSelect(player.id)}>{player.name}</button>)}</div>
+        <button className="utility-button" disabled={isProcessing} onClick={() => setTargetAction(null)}>ยกเลิกการเลือก</button>
+      </div> : discarding ? <div className="action-step">
+        <h3>เลือกไพ่ที่จะเปิดเผย</h3>
+        <div className="response-buttons">{myPlayer.cards.map((card, index) => !card.isDead && <button key={index}
+          className="action-choice danger-choice" disabled={isProcessing} onClick={() => submitDiscard(index)}>เปิดเผย {card.character}</button>)}</div>
+      </div> : exchanging ? <div className="action-step">
+        <h3>เลือกไพ่เก็บไว้ {myPlayer.cards.filter(c => !c.isDead).length} ใบ</h3>
+        <div className="exchange-cards">{(roomData.exchangeOptions || [...myPlayer.cards.filter(c => !c.isDead), ...(roomData.drawnCards || [])]).map((card, index) => <button
+          key={index} type="button" aria-pressed={selectedAmbassadorCards.includes(index)}
+          aria-label={`${card.character} ใบที่ ${index + 1}`} disabled={isProcessing}
+          className={`exchange-card ${selectedAmbassadorCards.includes(index) ? 'card-selected' : ''}`} onClick={() => handleToggleExchangeCard(index)}>
+          <img src={cardImages[card.character]} alt="" /><span>{selectedAmbassadorCards.includes(index) && '✓ '}{card.character}</span>
+        </button>)}</div>
+        <button className="action-choice" disabled={isProcessing || selectedAmbassadorCards.length !== myPlayer.cards.filter(c => !c.isDead).length} onClick={confirmExchange}>ยืนยันการสลับไพ่</button>
+      </div> : <>
+        {responding && <div className="event-banner" role="status">
+          <span>{waitingForMe ? 'รอคุณตอบสนอง' : 'มีเหตุการณ์ในสภา'}</span>
+          <button className="utility-button" onClick={() => setPopupOpen(true)}>เปิดเหตุการณ์</button>
+          <small>ปิดหน้าต่างได้ · เวลาตัดสินใจยังเดินต่อ</small>
+        </div>}
+        {category === 'response' ? responding ? !popupOpen ? responseContent
+          : <p className="muted-copy">เปิดหน้าต่างเหตุการณ์เพื่อดูรายละเอียดและตอบสนอง</p>
+          : <p className="muted-copy">ยังไม่มีเหตุการณ์ให้ตอบสนอง</p>
+          : <>
+            {category === 'roles' && <p className="muted-copy">อ้างบทบาทได้แม้ไม่มีไพ่ใบนั้น · ผู้เล่นอื่นจับโกหกได้</p>}
+            {myPlayer?.coins >= 10 && canTakeTurn && <p className="decision-clock">มี 10 เหรียญขึ้นไป ต้องเลือก Coup</p>}
+            <div className="action-grid">{actions.filter(action => (action.role === 'ทั่วไป') === (category === 'general')).map(action => {
+              const disabledReason = reasonDisabled(action);
+              return <button key={action.name} className="action-choice action-tile" disabled={!!disabledReason}
+                onClick={() => handleActionClick(action.name)}>
+                <span className="action-role">{action.role}</span>
+              <span className="action-title">{action.role !== 'ทั่วไป' && <RoleBadge role={action.role} owned={ownedRoles.has(action.role)} />}{action.label}</span>
+                <span>{action.description}</span>
+                <span className="action-explanation">{action.response}</span>
+                {action.role !== 'ทั่วไป' && <span className="action-explanation">{ownedRoles.has(action.role) ? `คุณมี ${action.role} รองรับแอคชั่นนี้` : `คุณต้องสวมบทบาท ${action.role} หากถูกจับโกหกจะเสียไพ่ 1 ใบ`}</span>}
+                <small className={disabledReason ? '' : 'action-ready'}>{disabledReason || 'พร้อม'}</small>
+              </button>;
+            })}
+              {category === 'roles' && <div className="role-note"><b><RoleBadge role="Contessa" owned={ownedRoles.has('Contessa')} />Contessa</b><span>บล็อก Assassinate เมื่อคุณเป็นเป้าหมาย</span><small>ปุ่มจะปรากฏใน “ตอบสนอง” เมื่อใช้ได้</small></div>}
             </div>
-          ))}
-        </div>
-      </div>
+          </>}
+      </>}
+    </section>
 
-      {/* ================= โซน ACTIONS & RESPONSES ================= */}
-      <div className={`bg-white/[0.03] border border-white/[0.06] rounded-[20px] p-5 relative box-border transition-smooth flex flex-col ${needsActionSpace ? 'flex-1 overflow-y-auto overscroll-contain' : 'flex-[0_1_auto] min-h-[100px]'}`}>
-        <div className="text-[#888] text-xs uppercase tracking-[2px] font-semibold mb-4 flex items-center gap-2">⚔️ ACTIONS</div>
-        
-        <div className="h-full flex items-center justify-center">
-          {/* 1. กล่องยืนยันการทำ Action */}
-          {actionToConfirm ? (
-            <div className="text-center w-full">
-               <h3 className="text-[#e2e0e8] mt-0">ยืนยันการใช้ {actionToConfirm}?</h3>
-               <p className="text-[#888] text-[14px]">คุณจะเสีย {actionToConfirm === "Coup" ? 7 : 3} เหรียญทันที</p>
-               <div className="flex justify-center gap-[15px] mt-[20px]">
-                 <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full text-[13px] font-medium flex items-center gap-2 transition-fast !bg-[rgba(16,185,129,0.2)] !text-[#34d399] !border-[rgba(16,185,129,0.5)] py-[12px] px-[30px] cursor-pointer" disabled={isDead || isProcessing} onClick={() => { performAction(actionToConfirm); setActionToConfirm(null); }}>✅ ยืนยัน</button>
-                 <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full text-[13px] font-medium flex items-center gap-2 transition-fast !bg-[rgba(239,68,68,0.1)] !text-[#fca5a5] !border-[rgba(239,68,68,0.4)] py-[12px] px-[30px] cursor-pointer" disabled={isDead || isProcessing} onClick={() => setActionToConfirm(null)}>❌ ยกเลิก</button>
-               </div>
-            </div>
-          ) : 
-
-          /* 2. กล่องเลือกเป้าหมาย */
-          targetAction ? (
-            <div className="text-center w-full">
-              <h3 className="text-[#d4af37] mt-0">🎯 เลือกเป้าหมาย: {targetAction}</h3>
-              <div className="flex flex-wrap justify-center gap-[10px] mt-[15px]">
-                {alivePlayers.filter(p => p.id !== userToken).map(p => (
-                  <button key={p.id} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl text-white min-w-[130px] cursor-pointer transition-smooth overflow-hidden flex-none w-auto py-[10px] px-[20px] text-center" disabled={isDead || isProcessing} onClick={() => handleTargetSelect(p.id)}>
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-              <button className="bg-transparent text-[#f87171] border-none mt-[20px] underline cursor-pointer" disabled={isDead || isProcessing} onClick={() => setTargetAction(null)}>ยกเลิกการเลือก</button>
-            </div>
-          ) : 
-
-          /* 3. กรณีมี Action เกิดขึ้น (แสดงข้อความชั่วคราวบนกล่องหลัก เพราะป๊อปอัปจะเด้งทับแล้ว) */
-          (gameState === "waiting_for_responses" || gameState === "waiting_for_block_responses") ? (
-            <div className="text-[#666] italic p-[20px] text-center">
-              โปรดดูหน้าต่างแจ้งเตือนกลางหน้าจอ...
-            </div>
-          ) : 
-
-          /* 4. กล่องบังคับทิ้งไพ่ */
-          gameState === "waiting_for_discard" && roomData.discardTarget === userToken ? (
-            <div className="text-center w-full">
-              <h3 className="mt-0 text-[#fca5a5] text-[16px]">💀 เลือกไพ่ที่จะทิ้ง</h3>
-              <div className="flex justify-center gap-[15px] mt-[15px]">
-                {myPlayer.cards.map((c: any, i: number) => !c.isDead && (
-                  <button key={i} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl text-white min-w-[130px] cursor-pointer transition-smooth overflow-hidden flex-none w-[130px] text-center !border-[#ef4444] py-[10px] px-[14px]" disabled={isDead || isProcessing} onClick={() => submitDiscard(i)}>
-                    ทิ้ง {c.character}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : 
-
-          /* 5. กล่องเลือกสลับไพ่ (Ambassador) */
-          gameState === "waiting_for_exchange" && isMyTurn ? (
-            <div className="text-center w-full">
-              <h3 className="text-[#d4af37] mt-0 text-[16px]">🔄 เลือกไพ่ที่จะเก็บไว้ {myPlayer.cards.filter(c => !c.isDead).length} ใบ</h3>
-              <div className="flex gap-[10px] justify-center flex-wrap my-[15px]">
-                {[...myPlayer.cards.filter(c => !c.isDead), ...(roomData.drawnCards || [])].map((c: any, i: number) => {
-                  const isSelected = selectedAmbassadorCards.includes(i);
-                  return (
-                    <div key={i} onClick={() => !isProcessing && handleToggleExchangeCard(i)} 
-                      className={`w-[85px] h-[125px] rounded-[8px] cursor-pointer transition-[0.2s] bg-cover bg-center relative ${isSelected ? 'border-[3px] border-[#d4af37] -translate-y-[10px]' : 'border border-[rgba(255,255,255,0.2)]'}`}
-                      style={{ backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.8)), url(${cardImages[c.character]})` }}>
-                      <div className="absolute bottom-0 w-full py-[4px] text-[11px] font-bold text-white text-center">{c.character}</div>
-                      {isSelected && <div className="absolute -top-[8px] -right-[8px] bg-[#d4af37] text-black rounded-full w-[22px] h-[22px] flex items-center justify-center font-bold">✓</div>}
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex justify-center">
-                <button style={{touchAction:'manipulation'}} className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full text-[13px] font-medium flex items-center gap-2 transition-fast !bg-[rgba(16,185,129,0.2)] !text-[#34d399] !border-[#10b981] cursor-pointer w-[200px] justify-center p-[10px]" 
-                  disabled={isProcessing || selectedAmbassadorCards.length !== myPlayer.cards.filter(c => !c.isDead).length} 
-                  onClick={confirmExchange}>
-                  ยืนยันการสลับไพ่
-                </button>
-              </div>
-            </div>
-          ) : 
-
-          /* 6. แผงปุ่ม Actions หลัก */
-          isMyTurn && !isDead && gameState === "waiting_for_action" ? (
-            <div className="flex flex-wrap gap-2 p-[5px] pb-3 w-full">
-              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#d4af37]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Income")}>
-                <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Income</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#d4af37]">+1 💰</span></div>
-                <small className="block text-[10px] text-white/40 font-light">รับรายได้พื้นฐาน</small>
-              </button>
-              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#6366f1]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("ForeignAid")}>
-                <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Foreign Aid</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#93c5fd]">+2 💰</span></div>
-                <small className="block text-[10px] text-white/40 font-light">รับเงินช่วยเหลือ (Duke บล็อกได้)</small>
-              </button>
-              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#ef4444]" disabled={myPlayer.coins < 7 || isProcessing} onClick={() => handleActionClick("Coup")}>
-                <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Coup</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#fca5a5]">-7 💰</span></div>
-                <small className="block text-[10px] text-white/40 font-light">โค่นล้มอิทธิพลคู่แข่ง</small>
-              </button>
-              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#8b5cf6]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Tax")}>
-                <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Tax (Duke)</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#c4b5fd]">+3 💰</span></div>
-                <small className="block text-[10px] text-white/40 font-light">เก็บภาษีจากกองกลาง</small>
-              </button>
-              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#ef4444]" disabled={myPlayer.coins < 3 || myPlayer.coins >= 10 || isProcessing} onClick={() => handleActionClick("Assassinate")}>
-                <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Assassinate</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#fca5a5]">-3 💰</span></div>
-                <small className="block text-[10px] text-white/40 font-light">ลอบสังหาร (Contessa บล็อกได้)</small>
-              </button>
-              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white flex-[1_1_calc(33.33%-8px)] min-w-[130px] cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#3b82f6]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Steal")}>
-                <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Steal (Captain)</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#93c5fd]">ขโมย 2 💰</span></div>
-                <small className="block text-[10px] text-white/40 font-light">ปล้นเงินจากผู้เล่นอื่น</small>
-              </button>
-              <button style={{touchAction:'manipulation'}} className="relative bg-white/[0.03] border border-white/[0.08] rounded-xl py-[10px] px-[14px] text-left text-white w-full cursor-pointer transition-smooth overflow-hidden border-l-4 border-l-[#10b981]" disabled={myPlayer.coins >= 10 || isProcessing} onClick={() => performAction("Exchange")}>
-                <div className="flex justify-between items-center mb-[2px]"><b className="text-[15px] tracking-[0.5px]">Exchange</b><span className="text-[13px] font-bold py-[2px] px-[6px] rounded-md bg-black/30 text-[#6ee7b7]">สลับไพ่</span></div>
-                <small className="block text-[10px] text-white/40 font-light">แลกเปลี่ยนตัวละครกับกองกลาง (Ambassador)</small>
-              </button>
-            </div>
-          ) : (
-            <div className="text-[#666] italic p-[20px]">กำลังรอเหตุการณ์ถัดไป...</div>
-          )}
-        </div>
-      </div>
-
-      {/* ================= 🚨 ACTION POPUP OVERLAY (เด้งขึ้นมาเมื่อมีแอคชั่น) ================= */}
-      {(gameState === "waiting_for_responses" || gameState === "waiting_for_block_responses") && (
-        <div className="fixed inset-0 w-screen h-screen bg-black/65 backdrop-blur-[6px] flex items-center justify-center z-[10000] animate-fade-in">
-          <div className={`action-popup-bg rounded-[20px] p-[35px_25px] w-[90%] max-w-[550px] text-center animate-pop-in ${gameState === "waiting_for_block_responses" ? "border-2 border-[rgba(59,130,246,0.5)] shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_40px_rgba(59,130,246,0.15)]" : "border-2 border-[rgba(239,68,68,0.5)] shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_40px_rgba(239,68,68,0.15)]"}`}>
-            
-            <div className="text-[45px] mb-[15px]">{gameState === "waiting_for_responses" ? "⚠️" : "🛡️"}</div>
-            <h2 className="text-white m-[0_0_20px_0] font-outfit tracking-[1px]">
-              {gameState === "waiting_for_responses" ? "มีการประกาศใช้ Action!" : "มีการประกาศ Block!"}
-            </h2>
-
-            {/* ส่วนแจ้งรายละเอียดว่าใครทำอะไรใส่ใคร แบบเน้นสีจัดจ้าน */}
-            <div className="bg-black/40 p-5 rounded-xl mb-[25px] leading-[1.8] border border-white/[0.05]">
-              {gameState === "waiting_for_responses" ? (
-                <>
-                  <span className="text-[#f1c40f] font-bold text-[18px]">{sourcePlayer?.name}</span>
-                  <span className="text-[#e2e0e8] text-[16px]"> ประกาศใช้ </span>
-                  <span className="bg-[rgba(239,68,68,0.2)] text-[#fca5a5] py-1 px-[10px] rounded-md font-bold text-[18px] border border-[rgba(239,68,68,0.4)] mx-[6px] inline-block">{roomData.pendingAction.actionName}</span>
-                  {targetPlayer && (
-                    <>
-                      <span className="text-[#e2e0e8] text-[16px]"> ใส่ </span>
-                      <span className="text-[#f1c40f] font-bold text-[18px]">{targetPlayer.name}</span>
-                    </>
-                  )}
-                </>
-              ) : (
-                <>
-                  <span className="text-[#f1c40f] font-bold text-[18px]">{blockerPlayer?.name}</span>
-                  <span className="text-[#e2e0e8] text-[16px]"> ประกาศบล็อก </span>
-                  <span className="bg-[rgba(239,68,68,0.2)] text-[#fca5a5] py-1 px-[10px] rounded-md font-bold text-[18px] border border-[rgba(239,68,68,0.4)] mx-[6px] inline-block">{roomData.pendingAction.actionName}</span>
-                  <span className="text-[#e2e0e8] text-[16px]"> ของ </span>
-                  <span className="text-[#f1c40f] font-bold text-[18px]">{sourcePlayer?.name}</span>
-                  <br/><span className="text-[#e2e0e8] text-[16px] inline-block mt-[8px]">โดยอ้างสิทธิ์ </span>
-                  <span className="bg-[rgba(59,130,246,0.2)] text-[#93c5fd] py-1 px-[10px] rounded-md font-bold text-[18px] border border-[rgba(59,130,246,0.4)] mx-[6px] inline-block">{roomData.pendingAction.blockCharacter}</span>
-                </>
-              )}
-            </div>
-
-            {/* ปุ่มดูไพ่ของฉัน / Peek My Cards */}
-            <div className="mb-6 flex justify-center">
-              <button 
-                className="bg-white/10 hover:bg-white/20 border border-white/20 text-[#d4af37] text-xs py-1.5 px-3 rounded-md transition-fast cursor-pointer flex items-center gap-1 font-medium"
-                onClick={() => setShowPeekCards(!showPeekCards)}
-              >
-                {showPeekCards ? "🙈 ซ่อนไพ่ในมือ" : "👁️ ดูไพ่ในมือของฉัน"}
-              </button>
-            </div>
-
-            {showPeekCards && (
-              <div className="flex gap-4 justify-center mb-6 p-4 bg-black/40 rounded-xl border border-white/10 animate-fade-in max-w-[320px] mx-auto">
-                {myPlayer?.cards?.map((c: any, i: number) => (
-                  <div key={i} className={`relative rounded-lg border border-[rgba(212,175,55,0.3)] w-[90px] h-[130px] bg-cover bg-center flex items-end justify-center p-3 transition-smooth ${c.isDead ? 'opacity-30 grayscale' : 'opacity-100 grayscale-0'}`} style={{ 
-                    backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.9)), url(${cardImages[c.character] || ''})`
-                  }}>
-                    <span className={`text-[#d4af37] font-bold font-cinzel text-[11px] [text-shadow:1px_1px_2px_black] ${c.isDead ? 'line-through' : 'no-underline'}`}>{c.character}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* กล่องปุ่มกดตอบสนองด้านล่าง */}
-            {isWaitingForMyResponse ? (
-              <div>
-                <p className="text-[#e2e0e8] m-[0_0_15px_0]">คุณจะตัดสินใจอย่างไร?</p>
-                
-                <div className="flex gap-[15px] justify-center flex-wrap">
-                  <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full font-medium flex items-center gap-2 transition-fast !bg-[rgba(16,185,129,0.2)] !text-[#34d399] !border !border-[rgba(16,185,129,0.6)] !text-[16px] !py-[14px] !px-[35px]" disabled={isDead || isProcessing} onClick={handleVotePass}>
-                    ✅ Allow (ปล่อยผ่าน)
-                  </button>
-                  <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full font-medium flex items-center gap-2 transition-fast !bg-[rgba(239,68,68,0.2)] !text-[#fca5a5] !border !border-[rgba(239,68,68,0.6)] !text-[16px] !py-[14px] !px-[35px]" disabled={isDead || isProcessing} onClick={handleChallenge}>
-                    🚨 Challenge (จับโกหก)
-                  </button>
-                </div>
-
-                {/* ปุ่ม Block พิเศษตามสถานการณ์ */}
-                <div className="flex gap-[10px] justify-center mt-[15px]">
-                  {gameState === "waiting_for_responses" && roomData.pendingAction.actionName === "ForeignAid" && <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full font-medium flex items-center gap-2 transition-fast !bg-[rgba(59,130,246,0.2)] !text-[#93c5fd] !border !border-[rgba(59,130,246,0.5)] !text-[14px] !py-[10px] !px-[20px]" disabled={isDead || isProcessing} onClick={() => handleBlock("Duke")}>🛡️ Block (Duke)</button>}
-                  {gameState === "waiting_for_responses" && roomData.pendingAction.actionName === "Assassinate" && roomData.pendingAction.targetId === userToken && <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full font-medium flex items-center gap-2 transition-fast !bg-[rgba(59,130,246,0.2)] !text-[#93c5fd] !border !border-[rgba(59,130,246,0.5)] !text-[14px] !py-[10px] !px-[20px]" disabled={isDead || isProcessing} onClick={() => handleBlock("Contessa")}>🛡️ Block (Contessa)</button>}
-                  {gameState === "waiting_for_responses" && roomData.pendingAction.actionName === "Steal" && roomData.pendingAction.targetId === userToken && (
-                    <>
-                      <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full font-medium flex items-center gap-2 transition-fast !bg-[rgba(59,130,246,0.2)] !text-[#93c5fd] !border !border-[rgba(59,130,246,0.5)] !text-[14px] !py-[10px] !px-[20px]" disabled={isDead || isProcessing} onClick={() => handleBlock("Captain")}>🛡️ Block (Captain)</button>
-                      <button className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#d4af37] rounded-full font-medium flex items-center gap-2 transition-fast !bg-[rgba(59,130,246,0.2)] !text-[#93c5fd] !border !border-[rgba(59,130,246,0.5)] !text-[14px] !py-[10px] !px-[20px]" disabled={isDead || isProcessing} onClick={() => handleBlock("Ambassador")}>🛡️ Block (Ambassador)</button>
-                    </>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="text-[#888] italic text-[16px] p-[10px]">
-                ⏳ กำลังรอผู้เล่นอื่นตัดสินใจ...
-              </div>
-            )}
-
-          </div>
-        </div>
-      )}
-
-    </div>
-  );
+    {responding && popupOpen && <Modal title={gameState === 'waiting_for_block_responses' ? 'มีการประกาศบล็อก' : 'มีการประกาศแอคชั่น'}
+      onClose={() => setPopupOpen(false)}>{responseContent}<p className="muted-copy">ปิดเพื่อดูกระดานได้ แล้วกด “เปิดเหตุการณ์” เพื่อกลับมา · การปิดไม่ใช่การปล่อยผ่าน</p></Modal>}
+  </div>;
 }

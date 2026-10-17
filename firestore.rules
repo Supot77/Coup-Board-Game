@@ -1,0 +1,282 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function roomPath(roomCode) {
+      return /databases/$(database)/documents/rooms/$(roomCode);
+    }
+
+    function invitePath(roomCode) {
+      return /databases/$(database)/documents/roomInvites/$(roomCode);
+    }
+
+    function playerPath(roomCode, uid) {
+      return /databases/$(database)/documents/rooms/$(roomCode)/players/$(uid);
+    }
+
+    function cleanupHasStarted(data) {
+      return data.keys().hasAny(['cleanupStarted']) && data.cleanupStarted == true;
+    }
+
+    function cleanupHasNotStarted(data) {
+      return !data.keys().hasAny(['cleanupStarted']) || data.cleanupStarted != true;
+    }
+
+    function markerPath(roomCode, uid) {
+      return /databases/$(database)/documents/rooms/$(roomCode)/cleanupMarkers/$(uid);
+    }
+
+    function schemaThreeRoom(roomCode) {
+      return exists(roomPath(roomCode)) && get(roomPath(roomCode)).data.schemaVersion == 3;
+    }
+
+    function roomMember(roomCode) {
+      return signedIn()
+        && schemaThreeRoom(roomCode)
+        && exists(playerPath(roomCode, request.auth.uid));
+    }
+
+    function cleanupMember(roomCode) {
+      return signedIn()
+        && schemaThreeRoom(roomCode)
+        && cleanupHasStarted(get(roomPath(roomCode)).data)
+        && exists(markerPath(roomCode, request.auth.uid));
+    }
+
+    function roomAccess(roomCode) {
+      return roomMember(roomCode) || cleanupMember(roomCode);
+    }
+
+    function isHost(roomCode) {
+      return roomMember(roomCode) && get(roomPath(roomCode)).data.adminId == request.auth.uid;
+    }
+
+    function idleLobby(roomCode) {
+      return schemaThreeRoom(roomCode)
+        && get(roomPath(roomCode)).data.status == 'lobby'
+        && get(roomPath(roomCode)).data.lastActivityAt <= request.time - duration.value(30, 'm');
+    }
+
+    function canClean(roomCode) {
+      return roomAccess(roomCode)
+        && (cleanupHasStarted(get(roomPath(roomCode)).data) || idleLobby(roomCode));
+    }
+
+    function isEmptyPrivateHand(data) {
+      return data.keys().hasOnly(['cards', 'exchangeOptions'])
+        && data.cards is list && data.cards.size() == 0
+        && data.exchangeOptions is list && data.exchangeOptions.size() == 0;
+    }
+
+    function roomCreatedByCaller(roomCode) {
+      return signedIn()
+        && existsAfter(roomPath(roomCode))
+        && getAfter(roomPath(roomCode)).data.schemaVersion == 3
+        && getAfter(roomPath(roomCode)).data.status == 'lobby'
+        && getAfter(roomPath(roomCode)).data.adminId == request.auth.uid
+        && existsAfter(invitePath(roomCode))
+        && getAfter(invitePath(roomCode)).data.playerCount == 1;
+    }
+
+    function joiningCaller(roomCode) {
+      return signedIn()
+        && exists(invitePath(roomCode))
+        && get(invitePath(roomCode)).data.schemaVersion == 3
+        && get(invitePath(roomCode)).data.status == 'lobby'
+        && get(invitePath(roomCode)).data.playerCount < 6
+        && existsAfter(invitePath(roomCode))
+        && getAfter(invitePath(roomCode)).data.playerCount == get(invitePath(roomCode)).data.playerCount + 1
+        && existsAfter(roomPath(roomCode))
+        && getAfter(roomPath(roomCode)).data.status == 'lobby'
+        && cleanupHasNotStarted(getAfter(roomPath(roomCode)).data)
+        && existsAfter(playerPath(roomCode, request.auth.uid))
+        && !exists(playerPath(roomCode, request.auth.uid));
+    }
+
+    function validPlayer(data) {
+      return data.keys().hasOnly(['name', 'coins', 'isDead', 'influenceCount', 'revealedCards'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 24
+        && data.coins == 2 && data.isDead == false && data.influenceCount == 2
+        && data.revealedCards is list && data.revealedCards.size() == 0;
+    }
+
+    function validCommand(data) {
+      return data.keys().hasOnly(['actorUid', 'payload', 'createdAt'])
+        && data.actorUid == request.auth.uid
+        && data.createdAt == request.time
+        && data.payload is map
+        && data.payload.type in ['action', 'respond', 'discard', 'exchange', 'surrender'];
+    }
+
+    match /roomInvites/{roomCode} {
+      allow get: if signedIn();
+      allow list: if false;
+
+      allow create: if roomCode.matches('^[A-HJ-NP-Z]{8}$')
+        && roomCreatedByCaller(roomCode)
+        && request.resource.data.keys().hasOnly(['schemaVersion', 'status', 'playerCount'])
+        && request.resource.data.schemaVersion == 3
+        && request.resource.data.status == 'lobby'
+        && request.resource.data.playerCount == 1;
+
+      allow update: if signedIn() && (
+        (isHost(roomCode)
+          && cleanupHasNotStarted(get(roomPath(roomCode)).data)
+          && request.resource.data.schemaVersion == resource.data.schemaVersion
+          && request.resource.data.playerCount == resource.data.playerCount
+          && request.resource.data.status in ['lobby', 'playing'])
+        || (resource.data.status == 'lobby'
+          && request.resource.data.status == 'lobby'
+          && request.resource.data.playerCount == resource.data.playerCount + 1
+          && request.resource.data.playerCount <= 6
+          && existsAfter(playerPath(roomCode, request.auth.uid))
+          && !exists(playerPath(roomCode, request.auth.uid)))
+        || (isHost(roomCode)
+          && cleanupHasNotStarted(get(roomPath(roomCode)).data)
+          && resource.data.status == 'lobby'
+          && request.resource.data.status == 'lobby'
+          && request.resource.data.playerCount == resource.data.playerCount - 1)
+        || (roomMember(roomCode)
+          && resource.data.status == 'lobby'
+          && cleanupHasNotStarted(get(roomPath(roomCode)).data)
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.playerCount == resource.data.playerCount - 1
+          && !existsAfter(playerPath(roomCode, request.auth.uid)))
+        || (roomMember(roomCode)
+          && idleLobby(roomCode)
+          && request.resource.data.status == 'closed'
+          && request.resource.data.playerCount == resource.data.playerCount)
+        || (isHost(roomCode)
+          && request.resource.data.status == 'closed'
+          && request.resource.data.playerCount == 0
+          && cleanupHasStarted(getAfter(roomPath(roomCode)).data))
+      );
+
+      allow delete: if isHost(roomCode) || canClean(roomCode);
+    }
+
+    match /rooms/{roomCode} {
+      allow get: if roomAccess(roomCode);
+      allow list: if false;
+
+      allow create: if signedIn()
+        && roomCode.matches('^[A-HJ-NP-Z]{8}$')
+        && request.resource.data.schemaVersion == 3
+        && request.resource.data.status == 'lobby'
+        && request.resource.data.adminId == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.lastActivityAt == request.time
+        && existsAfter(invitePath(roomCode))
+        && existsAfter(playerPath(roomCode, request.auth.uid));
+
+      allow update: if (signedIn()
+          && resource.data.schemaVersion == 3
+          && resource.data.adminId == request.auth.uid
+          && exists(playerPath(roomCode, request.auth.uid))
+          && cleanupHasNotStarted(resource.data)
+          && request.resource.data.schemaVersion == 3
+          && request.resource.data.adminId is string
+          && (request.resource.data.adminId == resource.data.adminId
+            || existsAfter(playerPath(roomCode, request.resource.data.adminId))))
+        || (roomMember(roomCode)
+          && cleanupHasNotStarted(resource.data)
+          && resource.data.status == 'lobby'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActivityAt', 'expiresAt']))
+        || (joiningCaller(roomCode)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActivityAt', 'expiresAt']))
+        || (isHost(roomCode)
+          && resource.data.status == 'lobby'
+          && request.resource.data.cleanupStarted == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cleanupStarted']))
+        || (roomMember(roomCode)
+          && idleLobby(roomCode)
+          && request.resource.data.cleanupStarted == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cleanupStarted']));
+
+      allow delete: if canClean(roomCode);
+
+      match /players/{playerUid} {
+        allow get: if roomAccess(roomCode)
+          || (signedIn() && playerUid == request.auth.uid
+            && exists(invitePath(roomCode)) && get(invitePath(roomCode)).data.status == 'lobby');
+        allow list: if roomAccess(roomCode);
+        allow create: if signedIn() && playerUid == request.auth.uid
+          && validPlayer(request.resource.data)
+          && (roomCreatedByCaller(roomCode) || joiningCaller(roomCode));
+          allow update: if isHost(roomCode) && cleanupHasNotStarted(get(roomPath(roomCode)).data);
+        allow delete: if canClean(roomCode)
+          || (roomMember(roomCode) && playerUid == request.auth.uid
+            && get(roomPath(roomCode)).data.status == 'lobby')
+          || (isHost(roomCode) && get(roomPath(roomCode)).data.status == 'lobby');
+      }
+
+      match /privatePlayers/{playerUid} {
+        allow get: if roomAccess(roomCode)
+          && (playerUid == request.auth.uid || isHost(roomCode) || canClean(roomCode))
+          || (signedIn() && playerUid == request.auth.uid
+            && exists(invitePath(roomCode)) && get(invitePath(roomCode)).data.status == 'lobby');
+        allow list: if isHost(roomCode) || canClean(roomCode);
+        allow create: if signedIn() && playerUid == request.auth.uid
+          && isEmptyPrivateHand(request.resource.data)
+          && (roomCreatedByCaller(roomCode) || joiningCaller(roomCode));
+        allow update: if isHost(roomCode) && cleanupHasNotStarted(get(roomPath(roomCode)).data);
+        allow delete: if canClean(roomCode)
+          || (roomMember(roomCode) && playerUid == request.auth.uid
+            && get(roomPath(roomCode)).data.status == 'lobby')
+          || (isHost(roomCode) && get(roomPath(roomCode)).data.status == 'lobby');
+      }
+
+      match /internal/{document=**} {
+        allow read: if isHost(roomCode) || canClean(roomCode);
+        allow create: if (isHost(roomCode)
+          && cleanupHasNotStarted(get(roomPath(roomCode)).data))
+          || roomCreatedByCaller(roomCode);
+          allow update: if isHost(roomCode) && cleanupHasNotStarted(get(roomPath(roomCode)).data);
+        allow delete: if isHost(roomCode) || canClean(roomCode);
+      }
+
+      match /commands/{commandId} {
+        allow get: if isHost(roomCode)
+          || (roomMember(roomCode) && resource.data.actorUid == request.auth.uid);
+        allow list: if isHost(roomCode) || canClean(roomCode);
+        allow create: if roomMember(roomCode)
+          && get(roomPath(roomCode)).data.status == 'playing'
+            && cleanupHasNotStarted(get(roomPath(roomCode)).data)
+          && validCommand(request.resource.data);
+        allow update: if false;
+        allow delete: if isHost(roomCode) || canClean(roomCode);
+      }
+
+      match /commandResults/{commandId} {
+        allow get: if isHost(roomCode)
+          || (roomAccess(roomCode) && resource.data.actorUid == request.auth.uid);
+        allow list: if isHost(roomCode) || canClean(roomCode);
+        allow create: if isHost(roomCode)
+            && cleanupHasNotStarted(get(roomPath(roomCode)).data)
+          && request.resource.data.keys().hasOnly(['actorUid', 'ok', 'message', 'completedAt'])
+          && request.resource.data.actorUid == get(/databases/$(database)/documents/rooms/$(roomCode)/commands/$(commandId)).data.actorUid
+          && request.resource.data.ok is bool
+          && request.resource.data.message is string
+          && request.resource.data.completedAt == request.time;
+        allow update: if false;
+        allow delete: if isHost(roomCode) || canClean(roomCode);
+      }
+
+      match /cleanupMarkers/{uid} {
+        allow get: if signedIn() && uid == request.auth.uid && roomAccess(roomCode);
+        allow list: if canClean(roomCode);
+        allow create: if signedIn() && uid == request.auth.uid && roomAccess(roomCode)
+          && (idleLobby(roomCode) || cleanupHasStarted(getAfter(roomPath(roomCode)).data));
+        allow update: if false;
+        allow delete: if canClean(roomCode);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

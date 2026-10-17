@@ -12,7 +12,9 @@ export interface Player {
   id: string;
   name: string;
   coins: number;
-  cards: Card[];
+  cards?: Card[];
+  influenceCount?: number;
+  revealedCards?: { slot: number; character: string }[];
   isAlive: boolean;
   isDead?: boolean;
   isReady?: boolean;
@@ -23,6 +25,9 @@ export interface GameState {
   turnIndex: number;
   players: Record<string, Player>;
   deck?: string[];
+  deckCount?: number;
+  drawnCards?: Card[];
+  exchangeOptions?: Card[];
   actionQueue?: any[];
   winner?: string;
   history?: any[];
