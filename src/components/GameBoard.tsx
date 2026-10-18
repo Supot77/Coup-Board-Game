@@ -22,14 +22,16 @@ const formatGameTime = (totalSeconds: number) => {
   return `${mins}:${secs}`;
 };
 
-export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: {
+export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules, opening = false, onOpeningCards }: {
   roomCode: string; user: User; onLeaveGame: () => void; onShowRules: () => void;
+  opening?: boolean; onOpeningCards?: (roles: string[] | null) => void;
 }) {
   const { notify, confirm } = useDialog();
   const { setIdleExempt } = useSession();
   const [roomData, setRoomData] = useState<any>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [privateCards, setPrivateCards] = useState<Card[]>([]);
+  const [privateHandConfirmed, setPrivateHandConfirmed] = useState(false);
   const [exchangeOptions, setExchangeOptions] = useState<Card[]>([]);
   const [targetAction, setTargetAction] = useState<string | null>(null);
   const [selectedAmbassadorCards, setSelectedAmbassadorCards] = useState<number[]>([]);
@@ -86,9 +88,10 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
       if (!active) return;
       setPlayers(snapshot.docs.map(player => ({ id: player.id, ...player.data() }) as Player));
     }, handleSnapshotError);
-    const unsubPrivate = onSnapshot(privateRef, snapshot => {
+    const unsubPrivate = onSnapshot(privateRef, { includeMetadataChanges: true }, snapshot => {
       if (!active) return;
       const data = snapshot.data();
+      setPrivateHandConfirmed(snapshot.exists() && snapshot.metadata?.fromCache !== true);
       setPrivateCards((data?.cards ?? []) as Card[]);
       setExchangeOptions((data?.exchangeOptions ?? []) as Card[]);
     }, handleSnapshotError);
@@ -126,6 +129,16 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
     && !(gameState === 'waiting_for_block_responses' && roomData?.pendingAction?.blockerId === user.token);
 
   useEffect(() => {
+    if (!opening || !roomData) return;
+    // Any progress beyond the opening turn takes priority over presentation.
+    if (roomData.status !== 'playing' || gameState !== 'waiting_for_action' || roomData.currentTurnIndex !== 0 || basePlayer?.isDead) {
+      onOpeningCards?.(null);
+    } else if (privateHandConfirmed && privateCards.length === 2) {
+      onOpeningCards?.(privateCards.map(card => card.character));
+    }
+  }, [opening, roomData, gameState, basePlayer?.isDead, privateCards, privateHandConfirmed, onOpeningCards]);
+
+  useEffect(() => {
     if (!roomData || !basePlayer) { setIdleExempt(false); return; }
     let exempt = false;
     if (gameState === 'waiting_for_action' || gameState === 'waiting_for_exchange') exempt = !isMyTurn;
@@ -135,10 +148,11 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
   }, [roomData, basePlayer, gameState, isMyTurn, responding, waitingForMe, user.token, setIdleExempt]);
 
   useEffect(() => {
+    if (opening) { setTurnNoticeOpen(false); wasMyActionTurn.current = false; return; }
     if (myActionTurn && !wasMyActionTurn.current) setTurnNoticeOpen(true);
     if (!myActionTurn) setTurnNoticeOpen(false);
     wasMyActionTurn.current = myActionTurn;
-  }, [myActionTurn]);
+  }, [myActionTurn, opening]);
 
   useEffect(() => {
     if (!turnNoticeOpen) return;

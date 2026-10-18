@@ -13,7 +13,7 @@ import CouncilTable from './CouncilTable';
 interface LobbyProps {
   user: User;
   onLogout: () => void;
-  onGameStart: (roomId: string) => void;
+  onGameStart: (roomId: string, newGame?: boolean) => void;
   onShowRules: () => void;
 }
 
@@ -47,6 +47,7 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
   useEffect(() => {
     if (!currentRoom) { invalidatedRoom.current = null; return; }
     let active = true;
+    let sawLobby = false;
     const forgetRoom = (message: string) => {
       if (!active || leavingRoom.current || invalidatedRoom.current === currentRoom) return;
       invalidatedRoom.current = currentRoom;
@@ -74,7 +75,11 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
       setOwnerUid(nextOwnerUid);
       setRoomStatus(data.status ?? null);
       setResponseTimeoutSeconds(getResponseTimeoutSeconds(data.responseTimeoutSeconds));
-      if (data.status === 'playing') onGameStart(currentRoom);
+      if (data.status === 'lobby' && !fromCache) sawLobby = true;
+      if (data.status === 'playing') {
+        if (sawLobby && (fromCache || snapshot.metadata?.hasPendingWrites)) return;
+        onGameStart(currentRoom, sawLobby);
+      }
     }, handleSnapshotError);
     const unsubPlayers = onSnapshot(playersRef, snapshot => {
       if (!active) return;

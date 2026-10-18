@@ -9,6 +9,7 @@ const state: any = {
 const configuredSeconds = new URLSearchParams(location.search).get('responseSeconds');
 if (configuredSeconds !== null) state.responseTimeoutSeconds = Number(configuredSeconds);
 const submittedCommands: any[] = [];
+let privateHandCached = false;
 const publicPlayers: any[] = [
   { id: 'player1', name: 'ผู้เล่นทดสอบชื่อยาวเพื่อดูการตัดบรรทัด', coins: scenario === 'coins10' ? 10 : 7, isDead: false, influenceCount: 2, revealedCards: [], avatarId: 'male', isReady: false },
   { id: 'player2', name: 'คู่แข่งชื่อยาวมากABCDEFGHIJKLMNOPQRSTUVWXYZ', coins: 12, isDead: false, influenceCount: 1, revealedCards: [{ slot: 0, character: 'Ambassador' }], avatarId: 'female', isReady: false },
@@ -101,6 +102,7 @@ const addFixturePlayer = () => {
 Object.assign(globalThis, {
   __coupUiFixture: {
     submittedCommands,
+    setPrivateCache: (cached: boolean) => { privateHandCached = cached; emit(); },
     setEvent: (actionName: string, blockCharacter: string | null = null) => {
       state.gameState = blockCharacter ? 'waiting_for_block_responses' : 'waiting_for_responses';
       state.passVotes = [];
@@ -174,7 +176,7 @@ Object.assign(globalThis, {
 const listenersFor = (ref: any) => {
   const notify = () => {
     if (ref.path.endsWith('/players')) return playerSnapshot();
-    if (ref.path.includes('/privatePlayers/')) return snapshot(ref.path.split('/').pop(), privateState[ref.path.split('/').pop()]);
+    if (ref.path.includes('/privatePlayers/')) return { ...snapshot(ref.path.split('/').pop(), privateState[ref.path.split('/').pop()]), metadata: { fromCache: privateHandCached } };
     return { ...snapshot('TEST', missingRoom ? null : { ...state }), metadata: { fromCache: cachedMissing } };
   };
   return notify;
