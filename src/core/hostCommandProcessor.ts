@@ -92,13 +92,17 @@ export function watchHostCommands(
   const commandsRef = collection(database, `rooms/${roomCode}/commands`);
   const commandsQuery = query(commandsRef, orderBy('createdAt', 'asc'));
   const running = new Set<string>();
-  return onSnapshot(commandsQuery, snapshot => {
+  let active = true;
+  const reportError = (error: unknown) => { if (active) onError(error); };
+  const unsubscribe = onSnapshot(commandsQuery, snapshot => {
+    if (!active) return;
     for (const command of snapshot.docs) {
       if (running.has(command.id)) continue;
       running.add(command.id);
       void processHostCommand(roomCode, command.id, hostUid, database)
-        .catch(onError)
+        .catch(reportError)
         .finally(() => running.delete(command.id));
     }
-  }, onError);
+  }, reportError);
+  return () => { active = false; unsubscribe(); };
 }

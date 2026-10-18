@@ -16,7 +16,7 @@ const privateState: Record<string, any> = {
   player2: { cards: [card('Ambassador', true), card('Captain')], exchangeOptions: [] },
   player3: { cards: [card('Ambassador', true), card('Contessa', true)], exchangeOptions: [] },
 };
-if (['room', 'room-1', 'room-2', 'room-6', 'room-member'].includes(scenario ?? '')) {
+if (['room', 'room-1', 'room-2', 'room-6', 'room-member', 'room-stale'].includes(scenario ?? '')) {
   state.status = 'lobby';
   if (scenario === 'room-1') publicPlayers.splice(1);
   if (scenario === 'room-2') publicPlayers.splice(2);
@@ -59,6 +59,10 @@ if (scenario === 'dead') {
 }
 if (scenario === 'gameover') state.gameState = 'game_over';
 
+let streamError: string | null = scenario === 'room-stale' ? 'permission-denied' : null;
+let leaveError: string | null = null;
+let missingRoom = false;
+let cachedMissing = false;
 const listeners = new Set<() => void>();
 const emit = () => { for (const notify of [...listeners]) notify(); };
 const playerData = (uid: string) => {
@@ -90,7 +94,12 @@ const addFixturePlayer = () => {
   emit();
 };
 Object.assign(globalThis, {
-  __coupUiFixture: { setHand: setFixtureHand, setReady: setFixtureReady, setAllReady: setFixtureAllReady, addPlayer: addFixturePlayer },
+  __coupUiFixture: {
+    failLeave: (code: string) => { leaveError = code; },
+    failRoom: (code: string) => { streamError = code; emit(); },
+    removeRoom: (fromCache = false) => { missingRoom = true; cachedMissing = fromCache; emit(); },
+    restoreRoom: () => { streamError = null; missingRoom = false; emit(); },
+    setHand: setFixtureHand, setReady: setFixtureReady, setAllReady: setFixtureAllReady, addPlayer: addFixturePlayer },
   __coupUiCallable: async (name: string, payload: any = {}) => {
     if (name === 'createRoom') {
       state.status = 'lobby'; state.adminId = 'player1'; publicPlayers.splice(1);
@@ -103,7 +112,9 @@ Object.assign(globalThis, {
     }
     if (name === 'setPlayerReady') { setFixtureReady(payload.isReady); return { updated: true }; }
     if (name === 'startGame') { state.status = 'playing'; state.gameState = 'waiting_for_action'; emit(); return { started: true }; }
-    if (name === 'leaveRoom') { state.status = 'lobby'; emit(); return { left: true }; }
+    if (name === 'leaveRoom') {
+      if (leaveError) throw { code: leaveError };
+      state.status = 'lobby'; emit(); return { left: true }; }
     if (name === 'kickPlayer') {
       const index = publicPlayers.findIndex(player => player.id === payload.playerId);
       if (index >= 0) publicPlayers.splice(index, 1);
@@ -146,7 +157,7 @@ const listenersFor = (ref: any) => {
   const notify = () => {
     if (ref.path.endsWith('/players')) return playerSnapshot();
     if (ref.path.includes('/privatePlayers/')) return snapshot(ref.path.split('/').pop(), privateState[ref.path.split('/').pop()]);
-    return snapshot('TEST', { ...state });
+    return { ...snapshot('TEST', missingRoom ? null : { ...state }), metadata: { fromCache: cachedMissing } };
   };
   return notify;
 };
@@ -158,8 +169,10 @@ const playerSnapshot = () => {
 export const getFirestore = () => ({});
 export const doc = (_db: any, ...parts: string[]) => ({ path: parts.join('/') });
 export const collection = doc;
-export function onSnapshot(ref: any, next: any) {
-  const notify = () => next(listenersFor(ref)());
+export function onSnapshot(ref: any, optionsOrNext: any, nextOrError?: any, errorCallback?: any) {
+  const next = typeof optionsOrNext === 'function' ? optionsOrNext : nextOrError;
+  const error = typeof optionsOrNext === 'function' ? nextOrError : errorCallback;
+  const notify = () => streamError ? error?.({ code: streamError }) : next(listenersFor(ref)());
   listeners.add(notify); notify();
   return () => listeners.delete(notify);
 }

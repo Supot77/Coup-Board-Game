@@ -5,6 +5,7 @@ import { db } from '../core/firebase';
 import type { Player, PlayerAvatarId, User } from '../types';
 import { createRoom, getCallableMessage, joinRoom, kickPlayer, leaveRoom, setPlayerReady, startGame } from '../core/roomCommands';
 import { watchLobbyMaintenance } from '../core/roomMaintenance';
+import { isRoomAccessLost, ROOM_UNAVAILABLE_MESSAGE } from '../core/roomAccess';
 import AvatarPicker from './AvatarPicker';
 import CouncilTable from './CouncilTable';
 
@@ -29,6 +30,7 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
   const [isProcessing, setIsProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
   const leavingRoom = useRef(false);
+  const invalidatedRoom = useRef<string | null>(null);
   const isAdmin = ownerUid === user.token;
 
   const clearCurrentRoom = useCallback(() => {
@@ -41,13 +43,28 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
   }, []);
 
   useEffect(() => {
-    if (!currentRoom) return;
+    if (!currentRoom) { invalidatedRoom.current = null; return; }
+    let active = true;
+    const forgetRoom = (message: string) => {
+      if (!active || leavingRoom.current || invalidatedRoom.current === currentRoom) return;
+      invalidatedRoom.current = currentRoom;
+      active = false;
+      clearCurrentRoom();
+      notify(message);
+    };
+    const handleSnapshotError = (error: unknown) => {
+      if (!active || leavingRoom.current) return;
+      if (isRoomAccessLost(error)) forgetRoom(ROOM_UNAVAILABLE_MESSAGE);
+      else notify(getCallableMessage(error));
+    };
     const roomRef = doc(db, 'rooms', currentRoom);
     const playersRef = collection(db, `rooms/${currentRoom}/players`);
-    const unsubRoom = onSnapshot(roomRef, snapshot => {
+    const unsubRoom = onSnapshot(roomRef, { includeMetadataChanges: true }, snapshot => {
+      if (!active) return;
+      const fromCache = snapshot.metadata?.fromCache;
       if (!snapshot.exists()) {
-        notify('ห้องนี้ปิดแล้ว กรุณาสร้างห้องใหม่หรือเข้าห้องอื่น');
-        clearCurrentRoom();
+        if (fromCache) return;
+        forgetRoom(ROOM_UNAVAILABLE_MESSAGE);
         return;
       }
       const data = snapshot.data();
@@ -55,8 +72,9 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
       setOwnerUid(nextOwnerUid);
       setRoomStatus(data.status ?? null);
       if (data.status === 'playing') onGameStart(currentRoom);
-    });
+    }, handleSnapshotError);
     const unsubPlayers = onSnapshot(playersRef, snapshot => {
+      if (!active) return;
       let amIStillHere = false;
       const playerList: Player[] = [];
       snapshot.forEach(playerSnapshot => {
@@ -64,13 +82,13 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
         playerList.push({ id: playerSnapshot.id, ...playerSnapshot.data() } as Player);
       });
       if (!amIStillHere && snapshot.docs.length > 0 && !leavingRoom.current) {
-        notify('เจ้าของห้องนำคุณออกจากห้องแล้ว');
-        clearCurrentRoom();
+        if (snapshot.metadata?.fromCache) return;
+        forgetRoom('เจ้าของห้องนำคุณออกจากห้องแล้ว');
         return;
       }
       setPlayers(playerList);
-    });
-    return () => { unsubRoom(); unsubPlayers(); };
+    }, handleSnapshotError);
+    return () => { active = false; unsubRoom(); unsubPlayers(); };
   }, [currentRoom, user.token, onGameStart, clearCurrentRoom, notify]);
 
   useEffect(() => {
@@ -116,7 +134,8 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
       clearCurrentRoom();
     } catch (error) {
       leavingRoom.current = false;
-      notify(getCallableMessage(error));
+      if (isRoomAccessLost(error)) clearCurrentRoom();
+      else notify(getCallableMessage(error));
     } finally { setIsProcessing(false); }
   };
 

@@ -62,3 +62,11 @@ The live site loads at [coup-49ffc.web.app](https://coup-49ffc.web.app). A tempo
 - Production verification: 19 HTTP resources returned 200 and matched the rebuilt local artifacts byte-for-byte by SHA-256, including the entry HTML/bundles, male/female sprites, long table, loading sword and Duke portrait. The production login page was rendered and visually inspected. Evidence: `output/release-2026-10-18/live-login.png` and `asset-manifest.json`.
 - This release verification did not create a live multiplayer room or exercise gameplay in production. The existing earlier production smoke record above describes the prior release, not this UI release.
 - No Functions, Scheduler, indexes, Realtime Database rules, billing-plan or trial changes were deployed. Deployment cache remains local and is excluded from the UI commit.
+
+## Room recovery and guest result hotfix — 2026-10-18
+
+- Released Firestore Rules first, then the matching 42-file Hosting build to `coup-49ffc`. Both Firebase deployment commands succeeded.
+- A member can now subscribe to an absent command result while their own same-ID immutable command is pending. Completed result reads still check the author. Cross-player/unknown result reads, result enumeration and guest result writes remain denied.
+- Lobby/game listeners forget stale room pointers on terminal membership errors. Denied leave returns to create/join; cached absence and transient connection failure preserve the room. Session name/avatar are retained.
+- Checks passed: Rules 7/7 (the new pending-result case failed before the change), Spark commands 7/7, engine 8/8, session 6/6, lint, TypeScript, production build, full responsive UI suite, focused lobby motion and mobile-touch room recovery. Live HTTP checks matched the deployed entry HTML, linked bundles and game-board chunk to the local build by SHA-256.
+- This hotfix verification used emulators and isolated UI fixtures. It did not exercise a physical phone or create a live multiplayer room. Only Firestore Rules and Hosting were deployed.

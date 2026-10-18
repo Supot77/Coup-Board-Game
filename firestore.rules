@@ -272,8 +272,15 @@ service cloud.firestore {
       }
 
       match /commandResults/{commandId} {
+        // The listener starts before the host creates the result. Only its command author may wait.
         allow get: if isHost(roomCode)
-          || (roomAccess(roomCode) && resource.data.actorUid == request.auth.uid);
+          || (roomAccess(roomCode) && (
+            (exists(/databases/$(database)/documents/rooms/$(roomCode)/commandResults/$(commandId))
+              && resource.data.actorUid == request.auth.uid)
+            || (!exists(/databases/$(database)/documents/rooms/$(roomCode)/commandResults/$(commandId))
+              && exists(/databases/$(database)/documents/rooms/$(roomCode)/commands/$(commandId))
+              && get(/databases/$(database)/documents/rooms/$(roomCode)/commands/$(commandId)).data.actorUid == request.auth.uid)
+          ));
         allow list: if isHost(roomCode) || canClean(roomCode);
         allow create: if isHost(roomCode)
             && cleanupHasNotStarted(get(roomPath(roomCode)).data)

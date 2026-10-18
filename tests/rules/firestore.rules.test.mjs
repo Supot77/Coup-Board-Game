@@ -120,6 +120,26 @@ test('a lobby member can change only their own readiness, never after the game s
   await assertFails(updateDoc(doc(guest, 'rooms/GAMEPLAY/players/guest'), { isReady: true }));
 });
 
+test('only the author can read a pending result before the host creates it', async () => {
+  const guest = env.authenticatedContext('guest').firestore();
+  const outsider = env.authenticatedContext('outsider').firestore();
+  const pending = await assertSucceeds(getDoc(doc(guest, 'rooms/GAMEPLAY/commandResults/guest-pending')));
+  assert.equal(pending.exists(), false);
+  await assertFails(getDoc(doc(outsider, 'rooms/GAMEPLAY/commandResults/guest-pending')));
+  await assertFails(getDoc(doc(guest, 'rooms/GAMEPLAY/commandResults/unknown')));
+  await assertFails(getDocs(collection(guest, 'rooms/GAMEPLAY/commandResults')));
+  await env.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'rooms/GAMEPLAY/commands/host-pending'), {
+      actorUid: 'host', payload: { type: 'action', actionName: 'Income' }, createdAt: new Date(),
+    });
+    await setDoc(doc(context.firestore(), 'rooms/GAMEPLAY/commandResults/host-done'), {
+      actorUid: 'host', ok: true, message: 'done', completedAt: new Date(),
+    });
+  });
+  await assertFails(getDoc(doc(guest, 'rooms/GAMEPLAY/commandResults/host-pending')));
+  await assertFails(getDoc(doc(guest, 'rooms/GAMEPLAY/commandResults/host-done')));
+});
+
 test('members can submit only their own immutable command; only the room host can write a result', async () => {
   const guest = env.authenticatedContext('guest').firestore();
   await assertSucceeds(setDoc(doc(guest, 'rooms/GAMEPLAY/commands/new-command'), {
@@ -139,6 +159,7 @@ test('members can submit only their own immutable command; only the room host ca
   });
   completeCommand.delete(doc(host, 'rooms/GAMEPLAY/commands/guest-pending'));
   await assertSucceeds(completeCommand.commit());
+  await assertSucceeds(getDoc(doc(guest, 'rooms/GAMEPLAY/commandResults/guest-pending')));
   await assertSucceeds(updateDoc(doc(host, 'rooms/GAMEPLAY/players/guest'), { coins: 500 }));
 });
 

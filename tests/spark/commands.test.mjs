@@ -6,7 +6,7 @@ import {
   connectFirestoreEmulator, collection, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, Timestamp,
 } from 'firebase/firestore';
 import { createRoom, joinRoom, leaveRoom, kickPlayer, startGame, resetGame, setPlayerReady } from '../../src/core/roomCommands.ts';
-import { submitGameCommand } from '../../src/core/gameCommands.ts';
+import { submitGameCommand, waitForCommandResult } from '../../src/core/gameCommands.ts';
 import { processHostCommand } from '../../src/core/hostCommandProcessor.ts';
 import { markIdleLobbyForCleanup, ROOM_IDLE_LIMIT_MS } from '../../src/core/roomMaintenance.ts';
 
@@ -114,6 +114,30 @@ test('host deals cards, processes an authored action once, and rejects an out-of
   assert.match(result.message, /ตาของคุณ/);
 
   await assert.rejects(setDoc(doc(guest.db, `rooms/${roomCode}/players/${guest.uid}`), { coins: 999 }));
+});
+
+test('a guest waits for delayed command results without a false permission error', async () => {
+  const code = (await createRoom('Host', 'male', host.uid, host.db)).roomCode;
+  await joinRoom(code, 'Guest', 'female', guest.uid, guest.db);
+  await setPlayerReady(code, true, host.uid, host.db);
+  await setPlayerReady(code, true, guest.uid, guest.db);
+  await startGame(code, host.uid, host.db);
+  await updateDoc(doc(host.db, `rooms/${code}`), { turnOrder: [guest.uid, host.uid], currentTurnIndex: 0 });
+  for (const ok of [true, false]) {
+    const { commandId } = await submitGameCommand(code, guest.uid, { type: 'action', actionName: 'Income' }, guest.db);
+    let settled = false;
+    const pending = waitForCommandResult(code, commandId, guest.uid, guest.db)
+      .then(result => ({ result }), error => ({ error })).finally(() => { settled = true; });
+    // A server read forces evaluation while the result is still absent.
+    assert.equal((await getDoc(doc(guest.db, `rooms/${code}/commandResults/${commandId}`))).exists(), false);
+    assert.equal(settled, false);
+    await processHostCommand(code, commandId, host.uid, host.db);
+    const outcome = await pending;
+    if (ok) assert.equal(outcome.result?.ok, true);
+    else { assert.equal(outcome.error?.code, 'failed-precondition'); assert.match(outcome.error.message, /ตาของคุณ/); }
+    await processHostCommand(code, commandId, host.uid, host.db);
+  }
+  assert.equal((await getDoc(doc(guest.db, `rooms/${code}/players/${guest.uid}`))).data().coins, 3);
 });
 
 test('the host alone can start, kick, and reset the lobby, and room membership stays bounded', async () => {

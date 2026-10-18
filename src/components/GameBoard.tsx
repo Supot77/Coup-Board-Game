@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../core/firebase';
 import { useDialog } from './DialogProvider';
@@ -12,6 +12,7 @@ import OpponentList from './OpponentList.jsx';
 import ActionLog from './ActionLog.jsx';
 import PlayerActionPanel from './PlayerActionPanel.jsx';
 import GameIcon from './GameIcon';
+import { isRoomAccessLost, ROOM_UNAVAILABLE_MESSAGE } from '../core/roomAccess';
 import LoadingScreen from './LoadingScreen';
 
 const formatGameTime = (totalSeconds: number) => {
@@ -38,22 +39,38 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
   const [gameTime, setGameTime] = useState(0);
   const [activeMobileTab, setActiveMobileTab] = useState('board');
   const [victoryOpen, setVictoryOpen] = useState(true);
+  const invalidatedRoom = useRef<string | null>(null);
 
   useEffect(() => {
+    let active = true;
+    const forgetRoom = () => {
+      if (!active || invalidatedRoom.current === roomCode) return;
+      invalidatedRoom.current = roomCode;
+      active = false;
+      localStorage.removeItem('coup_current_room');
+      notify(ROOM_UNAVAILABLE_MESSAGE);
+      onLeaveGame();
+    };
+    const handleSnapshotError = (error: unknown) => {
+      if (!active) return;
+      if (isRoomAccessLost(error)) forgetRoom();
+      else notify(getCallableMessage(error));
+    };
     const roomRef = doc(db, 'rooms', roomCode);
     const playersRef = collection(db, `rooms/${roomCode}/players`);
     const privateRef = doc(db, `rooms/${roomCode}/privatePlayers/${user.token}`);
-    const unsubRoom = onSnapshot(roomRef, snapshot => {
+    const unsubRoom = onSnapshot(roomRef, { includeMetadataChanges: true }, snapshot => {
+      if (!active) return;
+      const fromCache = snapshot.metadata?.fromCache;
       if (!snapshot.exists()) {
-        localStorage.removeItem('coup_current_room');
-        notify('ห้องนี้ปิดแล้ว กรุณาสร้างห้องใหม่หรือเข้าห้องอื่น');
-        onLeaveGame();
+        if (fromCache) return;
+        forgetRoom();
         return;
       }
       const data = snapshot.data();
       setRoomData(data);
       if (data.gameState !== 'game_over') setVictoryOpen(true);
-      if (data.status === 'lobby') onLeaveGame();
+      if (data.status === 'lobby') { active = false; onLeaveGame(); return; }
       if (data.actionLog) {
         setHistoryLog(previous => {
           if (previous[previous.length - 1]?.raw === data.actionLog) return previous;
@@ -61,19 +78,18 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
           return [...previous, { raw: data.actionLog, text: `[${formatGameTime(elapsed)}] ${data.actionLog}` }];
         });
       }
-    }, error => {
-      notify(getCallableMessage(error));
-      onLeaveGame();
-    });
+    }, handleSnapshotError);
     const unsubPlayers = onSnapshot(playersRef, snapshot => {
+      if (!active) return;
       setPlayers(snapshot.docs.map(player => ({ id: player.id, ...player.data() }) as Player));
-    }, error => notify(getCallableMessage(error)));
+    }, handleSnapshotError);
     const unsubPrivate = onSnapshot(privateRef, snapshot => {
+      if (!active) return;
       const data = snapshot.data();
       setPrivateCards((data?.cards ?? []) as Card[]);
       setExchangeOptions((data?.exchangeOptions ?? []) as Card[]);
-    }, error => notify(getCallableMessage(error)));
-    return () => { unsubRoom(); unsubPlayers(); unsubPrivate(); };
+    }, handleSnapshotError);
+    return () => { active = false; unsubRoom(); unsubPlayers(); unsubPrivate(); };
   }, [roomCode, user.token, notify, onLeaveGame]);
 
   useEffect(() => {
