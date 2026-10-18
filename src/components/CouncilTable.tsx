@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Player } from '../types';
 import PlayerAvatar, { type SeatDirection } from './PlayerAvatar';
+import CouncilCandlelight from './CouncilCandlelight';
 
 const seatLayout: { direction: SeatDirection; className: string }[] = [
   { direction: 'top', className: 'seat-top' },
@@ -15,12 +16,12 @@ function compareIds(left: Player, right: Player) {
   return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
 }
 
-export default function CouncilTable({ players, viewerUid, ownerUid, isProcessing, onReadyChange, onKick }: {
+export default function CouncilTable({ players, viewerUid, ownerUid, isProcessing, readyControl, onKick }: {
   players: Player[];
   viewerUid: string;
   ownerUid: string;
   isProcessing: boolean;
-  onReadyChange: (ready: boolean) => void;
+  readyControl: ReactNode;
   onKick: (playerId: string, playerName: string) => void;
 }) {
   const sortedPlayers = useMemo(() => [...players].sort(compareIds), [players]);
@@ -68,7 +69,6 @@ export default function CouncilTable({ players, viewerUid, ownerUid, isProcessin
     previousAllReady.current = allReady;
   }, [allReady, players.length]);
 
-  const viewer = players.find(player => player.id === viewerUid);
   const readyCount = players.filter(player => player.isReady === true).length;
 
   return (
@@ -76,6 +76,7 @@ export default function CouncilTable({ players, viewerUid, ownerUid, isProcessin
       <div className={`council-stage council-stage-long ${readyFlash ? 'all-ready-flash' : ''}`}>
         <div className="council-seat-layer">
           {[0, 1].map(row => <div className="council-seat-row" key={row}>
+          <CouncilCandlelight />
           <div className="council-tabletop" aria-hidden="true"><img src="/assets/secret-council/council-long-table.png" alt="" /></div>
           {seatLayout.slice(row * 3, row * 3 + 3).map((seat, offset) => {
             const index = row * 3 + offset;
@@ -130,10 +131,7 @@ export default function CouncilTable({ players, viewerUid, ownerUid, isProcessin
 
       <div className="council-ready-control">
         <p>{readyCount} จาก {players.length} คนพร้อมแล้ว</p>
-        {viewer && <button type="button" className={viewer.isReady === true ? 'button-secondary' : 'button-primary'}
-          disabled={isProcessing} onClick={() => onReadyChange(viewer.isReady !== true)}>
-          {viewer.isReady === true ? 'ยกเลิกความพร้อม' : 'พร้อมเล่น'}
-        </button>}
+        {readyControl}
       </div>
     </section>
   );

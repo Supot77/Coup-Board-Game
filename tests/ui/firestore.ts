@@ -40,6 +40,8 @@ if (['response', 'foreignaid', 'block', 'assassination', 'tax', 'other-target', 
   };
 }
 if (scenario === 'discard') { state.gameState = 'waiting_for_discard'; state.discardTarget = 'player1'; }
+if (scenario === 'discard-other') { state.gameState = 'waiting_for_discard'; state.discardTarget = 'player2'; }
+if (scenario === 'exchange-other') { state.gameState = 'waiting_for_exchange'; state.currentTurnIndex = 1; }
 if (scenario === 'exchange') {
   state.gameState = 'waiting_for_exchange';
   privateState.player1.exchangeOptions = [card('Duke'), card('Ambassador'), card('Captain'), card('Contessa')];

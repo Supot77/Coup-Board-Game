@@ -242,10 +242,12 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
 
       <header className="game-header">
         <div className="game-brand"><h1>COUP</h1><span>THE SECRET COUNCIL</span></div>
-        <div className="game-room-label"><span>ห้อง</span><strong>{roomCode}</strong></div>
-        <div className="game-header-stats">
-          {roomData.gameStartedAt && <span className="game-stat" aria-label={`เวลาเล่น ${formatGameTime(gameTime)}`}><GameIcon kind="clock" /><span className="game-stat-label">เวลาเล่น</span><strong>{formatGameTime(gameTime)}</strong></span>}
-          <span className="game-stat" aria-label={`ไพ่กองกลาง ${roomData.deckCount ?? 0} ใบ`}><GameIcon kind="cards" /><span className="game-stat-label">กองกลาง</span><strong>{roomData.deckCount ?? 0}</strong></span>
+        <div className="game-header-info">
+          <div className="game-room-label"><span>ห้อง</span><strong>{roomCode}</strong></div>
+          <div className="game-header-stats">
+            {roomData.gameStartedAt && <span className="game-stat" aria-label={`เวลาเล่น ${formatGameTime(gameTime)}`}><GameIcon kind="clock" /><span className="game-stat-label">เวลาเล่น</span><strong>{formatGameTime(gameTime)}</strong></span>}
+            <span className="game-stat" aria-label={`ไพ่กองกลาง ${roomData.deckCount ?? 0} ใบ`}><GameIcon kind="cards" /><span className="game-stat-label">กองกลาง</span><strong>{roomData.deckCount ?? 0}</strong></span>
+          </div>
         </div>
         <nav className="game-header-controls" aria-label="จัดการเกม">
           <button aria-label="เปิดกติกา" className="game-rules-button" onClick={onShowRules}><GameIcon kind="book" /><span>กติกา</span></button>

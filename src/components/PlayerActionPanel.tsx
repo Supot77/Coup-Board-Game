@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import Modal from './Modal';
 import HandGuide from './HandGuide';
 import RoleBadge from './RoleBadge';
@@ -22,6 +22,8 @@ export default function PlayerActionPanel(props: any) {
     handleBlock, submitDiscard, handleToggleExchangeCard, confirmExchange, showActionsOnly,
   } = props;
   const [category, setCategory] = useState('general');
+  const [inspectActions, setInspectActions] = useState(false);
+  const actionsContentId = useId();
   const [popupOpen, setPopupOpen] = useState(true);
   const [animateCharacter, setAnimateCharacter] = useState(true);
   const [showPeekCards, setShowPeekCards] = useState(false);
@@ -42,6 +44,13 @@ export default function PlayerActionPanel(props: any) {
     && !(gameState === 'waiting_for_block_responses' && pending?.blockerId === userToken);
   const discarding = !isDead && gameState === 'waiting_for_discard' && roomData.discardTarget === userToken;
   const exchanging = !isDead && gameState === 'waiting_for_exchange' && isMyTurn;
+  const needsInput = canTakeTurn || waitingForMe || discarding || exchanging;
+  const actionsExpanded = needsInput || inspectActions;
+  useEffect(() => {
+    setInspectActions(false);
+    if (waitingForMe) setCategory('response');
+    else if (canTakeTurn) setCategory('general');
+  }, [needsInput, waitingForMe, canTakeTurn]);
   const reasonDisabled = (action: typeof actions[number]) => {
     if (isDead) return 'คุณตกรอบแล้ว';
     if (isProcessing) return 'กำลังดำเนินการ';
@@ -123,7 +132,18 @@ export default function PlayerActionPanel(props: any) {
     </section>
 
     <section className="game-panel actions-panel" aria-label="แอคชั่น">
-      <h2 className="panel-heading">แอคชั่น</h2>
+      <div className="actions-panel-heading">
+        <h2 className="panel-heading">แอคชั่น</h2>
+        {!needsInput && <button type="button" className="utility-button actions-expand-toggle" aria-expanded={actionsExpanded}
+          aria-controls={actionsContentId} onClick={() => setInspectActions(value => !value)}>{actionsExpanded ? 'ย่อแอคชั่น' : 'ดูแอคชั่น'}</button>}
+      </div>
+      {!actionsExpanded && <p className="actions-waiting-summary" role="status">{status}</p>}
+      {responding && <div className="event-banner" role="status">
+        <span>{waitingForMe ? 'รอคุณตอบสนอง' : 'มีเหตุการณ์ในสภา'}</span>
+        <button className="utility-button" onClick={() => setPopupOpen(true)}>เปิดเหตุการณ์</button>
+        <small>ปิดหน้าต่างได้ · เวลาตัดสินใจยังเดินต่อ</small>
+      </div>}
+      <div id={actionsContentId} className="actions-panel-content" hidden={!actionsExpanded}>
       <p className="role-legend"><span><RoleBadge role="" owned /> มีบทบาทนี้</span><span><RoleBadge role="" owned={false} /> สวมบทบาท</span></p>
       <nav className="action-categories" aria-label="ประเภทแอคชั่น">
         {[
@@ -163,11 +183,6 @@ export default function PlayerActionPanel(props: any) {
         </button>)}</div>
         <button className="action-choice" disabled={isProcessing || selectedAmbassadorCards.length !== myPlayer.cards.filter(c => !c.isDead).length} onClick={confirmExchange}>ยืนยันการสลับไพ่</button>
       </div> : <>
-        {responding && <div className="event-banner" role="status">
-          <span>{waitingForMe ? 'รอคุณตอบสนอง' : 'มีเหตุการณ์ในสภา'}</span>
-          <button className="utility-button" onClick={() => setPopupOpen(true)}>เปิดเหตุการณ์</button>
-          <small>ปิดหน้าต่างได้ · เวลาตัดสินใจยังเดินต่อ</small>
-        </div>}
         {category === 'response' ? responding ? !popupOpen ? responseContent
           : <p className="muted-copy">เปิดหน้าต่างเหตุการณ์เพื่อดูรายละเอียดและตอบสนอง</p>
           : <p className="muted-copy">ยังไม่มีเหตุการณ์ให้ตอบสนอง</p>
@@ -192,6 +207,7 @@ export default function PlayerActionPanel(props: any) {
           </>}
       </>}
       {!responding && <HandGuide roles={ownedRoles} isDead={!!isDead} />}
+      </div>
     </section>
 
     {responding && popupOpen && <Modal className="game-event-dialog" title={gameState === 'waiting_for_block_responses' ? 'มีการประกาศบล็อก' : 'มีการประกาศแอคชั่น'}

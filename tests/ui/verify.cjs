@@ -17,6 +17,8 @@ const base = process.env.UI_TEST_BASE || 'http://127.0.0.1:5197/tests/ui/index.h
     await page.goto(`${base}?scenario=${scenario}`);
     await page.locator(scenario === 'login' ? '.login-bg' : scenario === 'lobby' ? '#room-code' : scenario.startsWith('room') ? '.council-lobby' : '.game-workspace').waitFor();
     await page.evaluate(() => document.fonts.ready);
+    const expand = page.getByRole('button', { name: 'ดูแอคชั่น', exact: true });
+    if (await expand.isVisible() && await page.locator('dialog[open]').count() === 0) await expand.click();
   };
   const closeDialog = async () => { await page.locator('dialog[open]').getByRole('button', { name: 'ปิดหน้าต่าง', exact: true }).click(); };
   const fits = async () => {
@@ -287,7 +289,7 @@ const base = process.env.UI_TEST_BASE || 'http://127.0.0.1:5197/tests/ui/index.h
   await page.locator('.room-code-value').waitFor();
   assert.equal(await page.locator('.player-avatar').getAttribute('data-avatar'), 'male');
   assert.equal(await page.locator('.council-seat-empty').count(), 5);
-  assert(await page.getByRole('button', { name: 'เริ่มเกม' }).isDisabled());
+  assert.equal(await page.getByRole('button', { name: 'เริ่มเกม', exact: true }).count(), 0);
   assert.match(await page.locator('.start-disabled-reason').innerText(), /อย่างน้อย 2 คน/);
   await page.locator('.player-avatar-sprite').evaluate(el => {
     window.__avatarFrames = [];
@@ -339,7 +341,7 @@ const base = process.env.UI_TEST_BASE || 'http://127.0.0.1:5197/tests/ui/index.h
   await page.setViewportSize({ width: 320, height: 568 });
   await open('room-6');
   await fits();
-  assert(await page.getByRole('button', { name: 'เริ่มเกม', exact: true }).isVisible());
+  assert(await page.getByRole('button', { name: 'พร้อมเล่น', exact: true }).isVisible());
   assert(await page.getByRole('button', { name: 'ออกจากห้อง', exact: true }).isVisible());
   await page.setViewportSize({ width: 390, height: 844 });
   await open('room-member');
@@ -360,7 +362,7 @@ const base = process.env.UI_TEST_BASE || 'http://127.0.0.1:5197/tests/ui/index.h
     assert.equal(await page.locator('.council-seat').count(), 6, 'desktop keeps six fixed seats');
     assert.equal(await page.locator('.council-seat:not(.council-seat-empty)').count(), 6);
     assert(await page.getByRole('button', { name: 'พร้อมเล่น', exact: true }).isVisible());
-    assert(await page.getByRole('button', { name: 'เริ่มเกม', exact: true }).isVisible());
+    assert.equal(await page.getByRole('button', { name: 'เริ่มเกม', exact: true }).count(), 0);
     assert(await page.getByRole('button', { name: 'ออกจากห้อง', exact: true }).isVisible());
     await fits();
     await page.screenshot({ path: path.join(output, `lobby-6-${width}.png`) });

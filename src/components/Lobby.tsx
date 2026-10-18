@@ -197,6 +197,8 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
   };
 
   if (currentRoom) {
+    const viewer = players.find(player => player.id === user.token);
+    const viewerReady = viewer?.isReady === true;
     const everyoneReady = players.length > 0 && players.every(player => player.isReady === true);
     const canStart = roomStatus === 'lobby' && players.length >= 2 && players.length <= 6 && everyoneReady;
     const startReason = players.length < 2
@@ -210,13 +212,11 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
             : '';
 
     return (
-      <main className="lobby-bg lobby-room-page fixed inset-0 z-10 overflow-y-auto px-4 py-5 sm:px-6 sm:py-8">
-        <section className="lobby-card lobby-card-room">
-          <header className="room-heading">
+      <main className="lobby-bg lobby-room-page fixed inset-0 z-10 overflow-y-auto">
+          <header className="room-heading lobby-room-header">
             <div>
               <p className="eyebrow">THE SECRET COUNCIL</p>
               <h1>โต๊ะสภาลับ</h1>
-              <p>ห้องจะเริ่มเมื่อสมาชิกทุกคนยืนยันว่าพร้อมแล้ว</p>
             </div>
             <div className="room-code-panel">
               <span>รหัสห้อง</span>
@@ -225,8 +225,13 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
                 {copied ? 'คัดลอกแล้ว' : 'คัดลอกรหัส'}
               </button>
             </div>
+            <nav className="lobby-room-header-actions" aria-label="เมนูห้อง">
+              <button type="button" className="button-secondary" onClick={onShowRules}>วิธีเล่นและกติกา</button>
+              <button type="button" className="button-secondary leave-room-button" disabled={isProcessing}
+                onClick={() => void handleLeaveRoom()}>ออกจากห้อง</button>
+            </nav>
           </header>
-
+        <section className="lobby-card lobby-card-room">
           <p className="room-privacy-note">
             ระบบตรวจและดำเนินเกมบนอุปกรณ์เจ้าของห้อง เขาจึงอาจเห็นหรือแก้ข้อมูลไพ่ได้ ควรเล่นกับคนที่ไว้ใจ
           </p>
@@ -247,20 +252,17 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
           </section>
 
           <CouncilTable players={players} viewerUid={user.token} ownerUid={ownerUid} isProcessing={isProcessing}
-            onReadyChange={handleReadyChange} onKick={handleKickPlayer} />
-
-          <footer className="room-controls">
-            <button type="button" className="button-secondary" onClick={onShowRules}>วิธีเล่นและกติกา</button>
-            <div className="room-owner-controls">
-              {isAdmin && <div className="start-control">
-                <button type="button" className="button-primary start-game-button" disabled={!canStart || isProcessing}
-                  onClick={() => void handleStartGame()}>เริ่มเกม</button>
-                {!canStart && <span className="start-disabled-reason">{startReason}</span>}
-              </div>}
-              <button type="button" className="button-secondary leave-room-button" disabled={isProcessing}
-                onClick={() => void handleLeaveRoom()}>ออกจากห้อง</button>
-            </div>
-          </footer>
+            onKick={handleKickPlayer} readyControl={<div className="lobby-ready-actions">
+              <button type="button" className={`${viewerReady && !canStart ? 'button-secondary' : 'button-primary'} lobby-ready-main`}
+                data-state={isAdmin && canStart ? 'start' : viewerReady ? 'cancel-ready' : 'ready'}
+                disabled={isProcessing || roomStatus !== 'lobby' || !viewer}
+                onClick={() => void (isAdmin && canStart ? handleStartGame() : handleReadyChange(!viewerReady))}>
+                {isAdmin && canStart ? 'เริ่มเกม' : viewerReady ? 'ยกเลิกความพร้อม' : 'พร้อมเล่น'}
+              </button>
+              {isAdmin && canStart && <button type="button" className="button-text lobby-ready-cancel" disabled={isProcessing}
+                onClick={() => void handleReadyChange(false)}>ยกเลิกความพร้อม</button>}
+              {isAdmin && !canStart && <span className="start-disabled-reason" role="status">{startReason}</span>}
+            </div>} />
         </section>
       </main>
     );

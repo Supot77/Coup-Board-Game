@@ -174,7 +174,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem(sessionKey(user.uid));
       await signOut(auth);
     }
-    localStorage.removeItem('coup_player_name');
+    // Keep the last successful display name for the next login form.
     localStorage.removeItem('coup_current_room');
     activeRef.current = false;
     setIsSessionActive(false);
