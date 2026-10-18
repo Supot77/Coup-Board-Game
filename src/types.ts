@@ -37,6 +37,7 @@ export interface GameState {
 }
 
 export interface RoomData {
+  responseTimeoutSeconds?: number;
   id?: string;
   name?: string;
   code?: string;

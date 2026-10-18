@@ -797,6 +797,13 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .rules-action, .rules-role { color: var(--sc-ink); border-color: #ded3c1; background: #f7f1e6; }
 .rules-action h4, .rules-role h4 { color: var(--sc-ink); font-family: var(--sc-display); }
 .rules-action small { color: #53656d; }
+.rules-role { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-items: start; gap: 14px; }
+.rules-role .rules-role-card { width: 100%; }
+.rules-role-card .playing-card-role { font-size: 9px; white-space: nowrap; }
+.rules-role-description { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 390px) {
+  .rules-role { grid-template-columns: 64px minmax(0, 1fr); gap: 10px; }
+}
 .rules-definitions > div { border-color: var(--sc-teal); }
 .rules-definitions dt { color: var(--sc-ink); }
 .rules-definitions dd { color: #53656d; }
@@ -1220,3 +1227,84 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .game-shell .actions-panel > .hand-guide { margin-top: 20px; margin-bottom: 0; }
 .game-event-dialog .response-buttons .role-star { color: #f0d18a; }
 .game-event-dialog .response-buttons .role-mask { color: #d9b9eb; }
+
+.room-time-settings { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 0; border-block: 1px solid var(--rule-line, #C9BBA6); margin-bottom: 16px; }
+.room-time-settings label { font-weight: 700; color: #102735; }
+.room-time-settings p, .room-time-settings small { display: block; font-size: 12px; color: #274253; margin: 4px 0 0; }
+.room-time-settings select { min-height: 44px; padding: 8px 32px 8px 12px; border: 1px solid #C9BBA6; border-radius: 6px; background: #FFF9EE; color: #102735; font: inherit; }
+.turn-notice { position: fixed; z-index: 45; top: max(100px, env(safe-area-inset-top)); right: 16px; display: flex; align-items: center; gap: 10px; width: min(430px, calc(100vw - 32px)); padding: 14px; background: #FFF9EE; color: #102735; border: 1px solid #C9BBA6; border-left: 4px solid #3E918A; box-shadow: 0 8px 24px #10273524; border-radius: 6px; animation: turn-notice-enter 180ms ease-out; }
+.turn-notice > .game-icon { width: 22px; flex-shrink: 0; color: #3E918A; }
+.turn-notice > div { flex: 1; min-width: 0; }
+.turn-notice strong, .turn-notice span { display: block; }
+.turn-notice span { font-size: 12px; margin-top: 2px; }
+.turn-notice .button-secondary { font-size: 12px; padding: 8px; min-height: 44px; }
+.turn-notice-close { background: transparent; border: 0; font-size: 22px; color: #274253; min-width: 32px; min-height: 44px; cursor: pointer; }
+@keyframes turn-notice-enter { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 390px) { .turn-notice { gap: 6px; right: 8px; width: calc(100vw - 16px); padding: 10px; } .turn-notice > .game-icon { display: none; } }
+@media (prefers-reduced-motion: reduce) { .turn-notice { animation: none; } }
+
+/* In-room council: dusk, dark walnut and ivory match the shadowed avatars.
+   Keep these tokens local so entry, game and portaled dialogs retain their palettes. */
+.lobby-room-page {
+  --sc-ink: #eee5d5;
+  --sc-ink-soft: #bdc6c5;
+  --sc-paper-light: #1b2a30;
+  --sc-rule: #485453;
+  color-scheme: dark;
+  background-color: #0b141a !important;
+  background-image: linear-gradient(180deg, #0b141ae8, #101a20f5), url('/BG-LOBBY.png') !important;
+  background-position: center;
+}
+.lobby-room-page > .lobby-card-room {
+  background: linear-gradient(180deg, #223137f5, #142128fa) !important;
+  box-shadow: 0 22px 64px #0007 !important;
+}
+.lobby-room-page .room-privacy-note { background: #2c302c; }
+.lobby-room-page .room-heading .eyebrow { color: #d2aa68 !important; }
+.lobby-room-page .room-code-panel > span,
+.lobby-room-page .start-disabled-reason,
+.lobby-room-page .room-time-settings small { color: var(--sc-ink-soft); }
+.lobby-room-page .room-time-settings { border-color: var(--sc-rule); }
+.lobby-room-page .room-time-settings label { color: var(--sc-ink); }
+.lobby-room-page .room-time-settings select {
+  color: var(--sc-ink); background: #142128; border-color: #64726d;
+}
+.lobby-room-page .council-stage-long {
+  background: radial-gradient(ellipse at 50% 34%, #53605730, transparent 70%);
+  border-radius: 10px;
+}
+.lobby-room-page .council-tabletop img { filter: brightness(.46) saturate(.65); }
+.lobby-room-page .council-stage-long .seat-details,
+.lobby-room-page .council-ready-control,
+.lobby-room-page .council-roster-mobile { background: #1b2a30; border-color: var(--sc-rule); box-shadow: 0 3px 10px #0003; }
+.lobby-room-page .seat-empty-label { color: #b2bcb9; background: #17242b; border-color: #65716a; }
+.lobby-room-page .seat-chair { color: #b1a28c; }
+.lobby-room-page .seat-you,
+.lobby-room-page .roster-mobile-name small { color: #e4dbcb; background: #394745; }
+.lobby-room-page .seat-owner,
+.lobby-room-page .roster-mobile-name small:last-child { color: #ebcf9e; background: #51432f; }
+.lobby-room-page .seat-readiness.ready { color: #8ed2be; }
+.lobby-room-page .seat-readiness.not-ready { color: #bdc6c5; }
+.lobby-room-page .seat-kick-button { color: #efb3a8; background: #30272a; border-color: #93645d; }
+.lobby-room-page .council-roster-mobile li { border-color: var(--sc-rule); }
+.lobby-room-page .button-secondary:hover:not(:disabled) { background: #304249 !important; }
+.lobby-room-page .button-primary { color: #fff9ee !important; }
+.lobby-room-page :is(button, select):focus-visible { outline: 2px solid #e2bd7e; outline-offset: 3px; }
+
+/* Public claimed-role gestures; fixed-size art never covers response controls. */
+.action-character { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 0 0 12px; padding: 8px 12px 0; border: 1px solid #485453; border-radius: 8px; background: radial-gradient(ellipse at 35% 80%, #34454b, #142128 75%); color: #eee5d5; pointer-events: none; }
+.action-character-stage { width: 160px; height: 160px; flex: 0 0 auto; overflow: hidden; display: grid; place-items: center; }
+.action-character-sprite { width: 80px; height: 160px; background-position: 100% 0; background-size: 600% 100%; background-repeat: no-repeat; }
+.action-character-playing { animation: actionCharacterGesture 720ms steps(5, end) both; }
+.action-character figcaption { display: grid; gap: 4px; min-width: 0; }
+.action-character figcaption strong { font: 600 22px/1.4 var(--sc-display); }
+.action-character figcaption span { font-size: 11px; color: #bdc6c5; }
+.action-character .action-character-fallback { width: 80px; }
+@keyframes actionCharacterGesture { from { background-position-x: 0%; } to { background-position-x: 100%; } }
+@media (max-width: 600px) {
+  .action-character { gap: 10px; padding: 0 8px; }
+  .action-character-stage { width: 120px; height: 120px; }
+  .action-character-sprite { width: 60px; height: 120px; }
+  .action-character figcaption strong { font-size: 19px; }
+}
+@media (prefers-reduced-motion: reduce) { .action-character-playing { animation: none; } }

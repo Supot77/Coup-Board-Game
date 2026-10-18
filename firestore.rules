@@ -118,6 +118,11 @@ service cloud.firestore {
         && data.avatarId in ['male', 'female'] && data.isReady == false;
     }
 
+    function validResponseTimeout(data) {
+      return !data.keys().hasAny(['responseTimeoutSeconds'])
+        || (data.responseTimeoutSeconds is int && data.responseTimeoutSeconds in [15, 30, 45, 60]);
+    }
+
     function validCommand(data) {
       return data.keys().hasOnly(['actorUid', 'payload', 'createdAt'])
         && data.actorUid == request.auth.uid
@@ -182,12 +187,17 @@ service cloud.firestore {
         && request.resource.data.schemaVersion == 3
         && request.resource.data.status == 'lobby'
         && request.resource.data.adminId == request.auth.uid
+        && validResponseTimeout(request.resource.data)
         && request.resource.data.createdAt == request.time
         && request.resource.data.lastActivityAt == request.time
         && existsAfter(invitePath(roomCode))
         && existsAfter(playerPath(roomCode, request.auth.uid));
 
-      allow update: if (signedIn()
+      allow update: if validResponseTimeout(request.resource.data)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['responseTimeoutSeconds'])
+          || (isHost(roomCode) && resource.data.status == 'lobby'
+            && request.resource.data.status == 'lobby' && cleanupHasNotStarted(resource.data)))
+        && ((signedIn()
           && resource.data.schemaVersion == 3
           && resource.data.adminId == request.auth.uid
           && exists(playerPath(roomCode, request.auth.uid))
@@ -209,7 +219,7 @@ service cloud.firestore {
         || (roomMember(roomCode)
           && idleLobby(roomCode)
           && request.resource.data.cleanupStarted == true
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cleanupStarted']));
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cleanupStarted'])));
 
       allow delete: if canClean(roomCode);
 

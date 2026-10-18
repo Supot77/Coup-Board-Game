@@ -5,7 +5,7 @@ import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
 import {
   connectFirestoreEmulator, collection, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, Timestamp,
 } from 'firebase/firestore';
-import { createRoom, joinRoom, leaveRoom, kickPlayer, startGame, resetGame, setPlayerReady } from '../../src/core/roomCommands.ts';
+import { createRoom, joinRoom, leaveRoom, kickPlayer, startGame, resetGame, setPlayerReady, setResponseTimeout } from '../../src/core/roomCommands.ts';
 import { submitGameCommand, waitForCommandResult } from '../../src/core/gameCommands.ts';
 import { processHostCommand } from '../../src/core/hostCommandProcessor.ts';
 import { markIdleLobbyForCleanup, ROOM_IDLE_LIMIT_MS } from '../../src/core/roomMaintenance.ts';
@@ -114,6 +114,33 @@ test('host deals cards, processes an authored action once, and rejects an out-of
   assert.match(result.message, /ตาของคุณ/);
 
   await assert.rejects(setDoc(doc(guest.db, `rooms/${roomCode}/players/${guest.uid}`), { coins: 999 }));
+});
+
+test('owner-selected response time survives start, commands and reset; transferred owner can configure it', async () => {
+  const code = (await createRoom('Host', 'male', host.uid, host.db)).roomCode;
+  await joinRoom(code, 'Guest', 'female', guest.uid, guest.db);
+  const roomRef = doc(host.db, `rooms/${code}`);
+  assert.equal((await getDoc(roomRef)).data().responseTimeoutSeconds, 15);
+  await assert.rejects(setResponseTimeout(code, 30, guest.uid, guest.db));
+  await assert.rejects(setResponseTimeout(code, 30, outsider.uid, outsider.db));
+  for (const invalid of [0, 16, 120, '30', 30.5]) await assert.rejects(setResponseTimeout(code, invalid, host.uid, host.db));
+  await setResponseTimeout(code, 60, host.uid, host.db);
+  assert.equal((await getDoc(doc(guest.db, `rooms/${code}`))).data().responseTimeoutSeconds, 60);
+  await setPlayerReady(code, true, host.uid, host.db);
+  await setPlayerReady(code, true, guest.uid, guest.db);
+  await startGame(code, host.uid, host.db);
+  await assert.rejects(setResponseTimeout(code, 30, host.uid, host.db));
+  const room = (await getDoc(roomRef)).data();
+  const actor = room.turnOrder[room.currentTurnIndex] === host.uid ? host : guest;
+  const { commandId } = await submitGameCommand(code, actor.uid, { type: 'action', actionName: 'Income' }, actor.db);
+  await processHostCommand(code, commandId, host.uid, host.db);
+  assert.equal((await getDoc(roomRef)).data().responseTimeoutSeconds, 60);
+  await resetGame(code, host.uid, host.db);
+  assert.equal((await getDoc(roomRef)).data().responseTimeoutSeconds, 60);
+  await leaveRoom(code, host.uid, host.db);
+  await setResponseTimeout(code, 45, guest.uid, guest.db);
+  assert.equal((await getDoc(doc(guest.db, `rooms/${code}`))).data().responseTimeoutSeconds, 45);
+  await leaveRoom(code, guest.uid, guest.db);
 });
 
 test('a guest waits for delayed command results without a false permission error', async () => {

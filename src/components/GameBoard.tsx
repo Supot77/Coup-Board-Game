@@ -13,6 +13,7 @@ import ActionLog from './ActionLog.jsx';
 import PlayerActionPanel from './PlayerActionPanel.jsx';
 import GameIcon from './GameIcon';
 import { isRoomAccessLost, ROOM_UNAVAILABLE_MESSAGE } from '../core/roomAccess';
+import { getResponseTimeoutSeconds } from '../core/responseTiming';
 import LoadingScreen from './LoadingScreen';
 
 const formatGameTime = (totalSeconds: number) => {
@@ -39,6 +40,8 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
   const [gameTime, setGameTime] = useState(0);
   const [activeMobileTab, setActiveMobileTab] = useState('board');
   const [victoryOpen, setVictoryOpen] = useState(true);
+  const [turnNoticeOpen, setTurnNoticeOpen] = useState(false);
+  const wasMyActionTurn = useRef(false);
   const invalidatedRoom = useRef<string | null>(null);
 
   useEffect(() => {
@@ -114,6 +117,8 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
   const alivePlayers = players.filter(player => !player.isDead);
   const gameState = roomData?.gameState;
   const isMyTurn = roomData?.turnOrder?.[roomData?.currentTurnIndex] === user.token;
+  const responseTimeoutSeconds = getResponseTimeoutSeconds(roomData?.responseTimeoutSeconds);
+  const myActionTurn = isMyTurn && gameState === 'waiting_for_action' && !!basePlayer && !basePlayer.isDead;
   const responding = gameState === 'waiting_for_responses' || gameState === 'waiting_for_block_responses';
   const myResponsePassed = roomData?.passVotes?.includes(user.token);
   const waitingForMe = !basePlayer?.isDead && responding && !myResponsePassed
@@ -128,6 +133,18 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
     else if (responding) exempt = !!basePlayer.isDead || !waitingForMe;
     setIdleExempt(exempt);
   }, [roomData, basePlayer, gameState, isMyTurn, responding, waitingForMe, user.token, setIdleExempt]);
+
+  useEffect(() => {
+    if (myActionTurn && !wasMyActionTurn.current) setTurnNoticeOpen(true);
+    if (!myActionTurn) setTurnNoticeOpen(false);
+    wasMyActionTurn.current = myActionTurn;
+  }, [myActionTurn]);
+
+  useEffect(() => {
+    if (!turnNoticeOpen) return;
+    const timer = window.setTimeout(() => setTurnNoticeOpen(false), 6000);
+    return () => window.clearTimeout(timer);
+  }, [turnNoticeOpen]);
 
   const runCommand = useCallback(async (command: GameCommand): Promise<boolean> => {
     setIsProcessing(true);
@@ -145,19 +162,20 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
 
   useEffect(() => {
     if (!waitingForMe || isProcessing) { setTimeLeft(null); return; }
-    setTimeLeft(15);
+    setTimeLeft(responseTimeoutSeconds);
+    const deadline = Date.now() + responseTimeoutSeconds * 1000;
+    let submitted = false;
     const timer = window.setInterval(() => {
-      setTimeLeft(previous => {
-        if (previous === null || previous <= 1) {
-          window.clearInterval(timer);
-          void handleVotePass();
-          return 0;
-        }
-        return previous - 1;
-      });
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining === 0 && !submitted) {
+        submitted = true;
+        window.clearInterval(timer);
+        void handleVotePass();
+      }
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [waitingForMe, roomData?.passVotes, roomData?.pendingAction?.blockerId, isProcessing, handleVotePass]);
+  }, [waitingForMe, gameState, roomData?.pendingAction?.blockerId, responseTimeoutSeconds, isProcessing, handleVotePass]);
 
   const performAction = async (actionName: string) => {
     if (['Assassinate', 'Steal', 'Coup'].includes(actionName)) {
@@ -215,6 +233,13 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
 
   return (
     <div className="gameboard-bg game-shell">
+      {turnNoticeOpen && myActionTurn && <aside className="turn-notice" role="status" aria-live="polite">
+        <GameIcon kind="clock" />
+        <div><strong>ถึงตาคุณแล้ว</strong><span>เลือกแอคชั่นเพื่อดำเนินเกมต่อ</span></div>
+        <button className="button-secondary" onClick={() => { setActiveMobileTab('actions'); setTurnNoticeOpen(false); }}>เลือกแอคชั่น</button>
+        <button className="turn-notice-close" aria-label="ปิดแจ้งเตือนถึงตาคุณ" onClick={() => setTurnNoticeOpen(false)}>×</button>
+      </aside>}
+
       <header className="game-header">
         <div className="game-brand"><h1>COUP</h1><span>THE SECRET COUNCIL</span></div>
         <div className="game-room-label"><span>ห้อง</span><strong>{roomCode}</strong></div>

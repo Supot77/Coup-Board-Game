@@ -6,6 +6,9 @@ const state: any = {
   gameStartedAt: Date.now(), deckCount: 2, passVotes: [], actionLog: 'ทดสอบเลย์เอาท์ด้วยข้อมูลจำลอง',
   pendingAction: null, discardTarget: null, afterDiscardState: null,
 };
+const configuredSeconds = new URLSearchParams(location.search).get('responseSeconds');
+if (configuredSeconds !== null) state.responseTimeoutSeconds = Number(configuredSeconds);
+const submittedCommands: any[] = [];
 const publicPlayers: any[] = [
   { id: 'player1', name: 'ผู้เล่นทดสอบชื่อยาวเพื่อดูการตัดบรรทัด', coins: scenario === 'coins10' ? 10 : 7, isDead: false, influenceCount: 2, revealedCards: [], avatarId: 'male', isReady: false },
   { id: 'player2', name: 'คู่แข่งชื่อยาวมากABCDEFGHIJKLMNOPQRSTUVWXYZ', coins: 12, isDead: false, influenceCount: 1, revealedCards: [{ slot: 0, character: 'Ambassador' }], avatarId: 'female', isReady: false },
@@ -95,6 +98,17 @@ const addFixturePlayer = () => {
 };
 Object.assign(globalThis, {
   __coupUiFixture: {
+    submittedCommands,
+    setEvent: (actionName: string, blockCharacter: string | null = null) => {
+      state.gameState = blockCharacter ? 'waiting_for_block_responses' : 'waiting_for_responses';
+      state.passVotes = [];
+      state.pendingAction = { actionName, sourceId: 'player2', targetId: ['Steal', 'Assassinate'].includes(actionName) ? 'player1' : null,
+        blockerId: blockCharacter ? 'player3' : null, blockCharacter };
+      emit();
+    },
+    setResponseTime: (seconds: number) => { state.responseTimeoutSeconds = seconds; emit(); },
+    setTurn: (index: number) => { state.gameState = 'waiting_for_action'; state.currentTurnIndex = index; emit(); },
+    passOther: () => { state.passVotes = ['player3']; emit(); },
     failLeave: (code: string) => { leaveError = code; },
     failRoom: (code: string) => { streamError = code; emit(); },
     removeRoom: (fromCache = false) => { missingRoom = true; cachedMissing = fromCache; emit(); },
@@ -110,6 +124,7 @@ Object.assign(globalThis, {
       state.status = 'lobby'; publicPlayers[0].avatarId = payload.avatarId; emit();
       return { roomCode: payload.roomCode };
     }
+    if (name === 'setResponseTimeout') { state.responseTimeoutSeconds = payload.seconds; emit(); return { updated: true }; }
     if (name === 'setPlayerReady') { setFixtureReady(payload.isReady); return { updated: true }; }
     if (name === 'startGame') { state.status = 'playing'; state.gameState = 'waiting_for_action'; emit(); return { started: true }; }
     if (name === 'leaveRoom') {
@@ -123,6 +138,7 @@ Object.assign(globalThis, {
     if (name === 'resetGame') { state.status = 'lobby'; state.gameState = 'lobby'; emit(); return { reset: true }; }
     if (name === 'submitGameCommand') {
       const command = payload.command;
+      submittedCommands.push(command);
       if (command.type === 'action') {
         if (command.actionName === 'Income') {
           publicPlayers[0].coins += 1;

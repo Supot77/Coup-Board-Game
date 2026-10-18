@@ -70,3 +70,11 @@ The live site loads at [coup-49ffc.web.app](https://coup-49ffc.web.app). A tempo
 - Lobby/game listeners forget stale room pointers on terminal membership errors. Denied leave returns to create/join; cached absence and transient connection failure preserve the room. Session name/avatar are retained.
 - Checks passed: Rules 7/7 (the new pending-result case failed before the change), Spark commands 7/7, engine 8/8, session 6/6, lint, TypeScript, production build, full responsive UI suite, focused lobby motion and mobile-touch room recovery. Live HTTP checks matched the deployed entry HTML, linked bundles and game-board chunk to the local build by SHA-256.
 - This hotfix verification used emulators and isolated UI fixtures. It did not exercise a physical phone or create a live multiplayer room. Only Firestore Rules and Hosting were deployed.
+
+## Response settings and character gestures release — 2026-10-18
+
+- Released the owner-selectable response duration, turn notice, dark waiting room, role cards in rules and individually generated character gestures in event popups. Character gestures represent public claims and do not reveal private hands or announce successful action resolution.
+- Deployed `firestore:rules` to `coup-49ffc` first; compilation and release succeeded. Deployed the matching 47-file Hosting build next; version finalization and release succeeded at `https://coup-49ffc.web.app`.
+- Before release: Rules 8/8, Spark commands 8/8, session 6/6, engine 8/8, lint, TypeScript and build passed. Full isolated UI regression passed during implementation; focused character-gesture and room-settings suites passed again for release. Emulator tests used demo project IDs and the existing portable Java runtime.
+- Production verification: 22 HTTP resources returned 200 and matched local files by SHA-256, including entry HTML, every built JS/CSS asset and all five role animation strips. Repeat with `node output/action-release-2026-10-18/verify-live.cjs`; results are in `output/action-release-2026-10-18/asset-manifest.json`.
+- No live multiplayer room or physical-device test was performed for this release. No Functions, Scheduler, indexes, Realtime Database rules or billing changes were deployed. Local Firebase deployment cache is excluded from the source commit.

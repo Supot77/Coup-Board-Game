@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
-  collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc, writeBatch,
+  collection, deleteField, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore';
 
 const projectId = 'demo-coup-rules';
@@ -118,6 +118,27 @@ test('a lobby member can change only their own readiness, never after the game s
   await assertFails(updateDoc(doc(host, 'rooms/BCDEFGHJ/players/host'), { isReady: true, coins: 99 }));
   await assertFails(updateDoc(doc(host, 'rooms/BCDEFGHJ/players/host'), { name: 'Changed' }));
   await assertFails(updateDoc(doc(guest, 'rooms/GAMEPLAY/players/guest'), { isReady: true }));
+});
+
+test('only the lobby owner can set an allowed response duration; it freezes during play', async () => {
+  const host = env.authenticatedContext('host').firestore();
+  const guest = env.authenticatedContext('guest').firestore();
+  const outsider = env.authenticatedContext('outsider').firestore();
+  const path = 'rooms/BCDEFGHJ';
+  for (const seconds of [15, 30, 45, 60]) {
+    await assertSucceeds(updateDoc(doc(host, path), { responseTimeoutSeconds: seconds }));
+    assert.equal((await getDoc(doc(guest, path))).data().responseTimeoutSeconds, seconds);
+  }
+  for (const invalid of [0, -1, 16, 120, 30.5, '30', null]) {
+    await assertFails(updateDoc(doc(host, path), { responseTimeoutSeconds: invalid }));
+  }
+  await assertFails(updateDoc(doc(guest, path), { responseTimeoutSeconds: 30 }));
+  await assertFails(updateDoc(doc(outsider, path), { responseTimeoutSeconds: 30 }));
+  await assertFails(updateDoc(doc(host, path), { status: 'playing', responseTimeoutSeconds: 30 }));
+  await assertSucceeds(updateDoc(doc(host, path), { status: 'playing' }));
+  await assertFails(updateDoc(doc(host, path), { responseTimeoutSeconds: 30 }));
+  await assertFails(updateDoc(doc(host, path), { responseTimeoutSeconds: deleteField() }));
+  await assertSucceeds(updateDoc(doc(host, path), { status: 'lobby' }));
 });
 
 test('only the author can read a pending result before the host creates it', async () => {

@@ -3,9 +3,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../core/firebase';
 import type { Player, PlayerAvatarId, User } from '../types';
-import { createRoom, getCallableMessage, joinRoom, kickPlayer, leaveRoom, setPlayerReady, startGame } from '../core/roomCommands';
+import { createRoom, getCallableMessage, joinRoom, kickPlayer, leaveRoom, setPlayerReady, setResponseTimeout, startGame } from '../core/roomCommands';
 import { watchLobbyMaintenance } from '../core/roomMaintenance';
 import { isRoomAccessLost, ROOM_UNAVAILABLE_MESSAGE } from '../core/roomAccess';
+import { getResponseTimeoutSeconds, RESPONSE_TIMEOUT_OPTIONS } from '../core/responseTiming';
 import AvatarPicker from './AvatarPicker';
 import CouncilTable from './CouncilTable';
 
@@ -29,6 +30,7 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
   const [roomStatus, setRoomStatus] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [responseTimeoutSeconds, setResponseTimeoutSeconds] = useState(15);
   const leavingRoom = useRef(false);
   const invalidatedRoom = useRef<string | null>(null);
   const isAdmin = ownerUid === user.token;
@@ -71,6 +73,7 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
       const nextOwnerUid = typeof data.adminId === 'string' ? data.adminId : '';
       setOwnerUid(nextOwnerUid);
       setRoomStatus(data.status ?? null);
+      setResponseTimeoutSeconds(getResponseTimeoutSeconds(data.responseTimeoutSeconds));
       if (data.status === 'playing') onGameStart(currentRoom);
     }, handleSnapshotError);
     const unsubPlayers = onSnapshot(playersRef, snapshot => {
@@ -153,6 +156,14 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
     finally { setIsProcessing(false); }
   };
 
+  const handleTimeoutChange = async (seconds: number) => {
+    if (!currentRoom || !isAdmin) return;
+    setIsProcessing(true);
+    try { await setResponseTimeout(currentRoom, seconds, user.token); }
+    catch (error) { notify(getCallableMessage(error)); }
+    finally { setIsProcessing(false); }
+  };
+
   const handleStartGame = async () => {
     if (!currentRoom) return;
     setIsProcessing(true);
@@ -224,6 +235,16 @@ export default function Lobby({ user, onLogout, onGameStart, onShowRules }: Lobb
             <strong>ผู้เล่น {players.length}/6</strong>
             <span>พร้อมเล่น {players.filter(player => player.isReady === true).length}/{players.length}</span>
           </div>
+
+          <section className="room-time-settings" aria-labelledby="response-time-label">
+            <div><label id="response-time-label" htmlFor={isAdmin ? 'response-time' : undefined}>เวลาตอบโต้</label>
+              <p>สำหรับยอมผ่าน จับโกหก และบล็อก · หมดเวลาเท่ากับยอมผ่าน</p></div>
+            {isAdmin ? <select id="response-time" value={responseTimeoutSeconds}
+              disabled={isProcessing || roomStatus !== 'lobby'}
+              onChange={event => void handleTimeoutChange(Number(event.target.value))}>
+              {RESPONSE_TIMEOUT_OPTIONS.map(seconds => <option key={seconds} value={seconds}>{seconds} วินาที</option>)}
+            </select> : <strong>{responseTimeoutSeconds} วินาที <small>เจ้าของห้องเป็นผู้ตั้ง</small></strong>}
+          </section>
 
           <CouncilTable players={players} viewerUid={user.token} ownerUid={ownerUid} isProcessing={isProcessing}
             onReadyChange={handleReadyChange} onKick={handleKickPlayer} />

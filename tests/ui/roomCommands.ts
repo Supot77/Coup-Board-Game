@@ -4,6 +4,7 @@ const invoke = (name: string, payload: unknown = {}) =>
 
 export const createRoom = async (displayName: string, avatarId: string) => invoke('createRoom', { displayName, avatarId });
 export const joinRoom = async (roomCode: string, displayName: string, avatarId: string) => invoke('joinRoom', { roomCode, displayName, avatarId });
+export const setResponseTimeout = async (_roomCode: string, seconds: number) => invoke('setResponseTimeout', { seconds });
 export const setPlayerReady = async (_roomCode: string, isReady: boolean) => invoke('setPlayerReady', { isReady });
 export const leaveRoom = async () => invoke('leaveRoom');
 export const kickPlayer = async (_roomCode: string, playerId: string) => invoke('kickPlayer', { playerId });

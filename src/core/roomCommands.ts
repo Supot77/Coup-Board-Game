@@ -5,6 +5,7 @@ import {
 import { auth, db } from './firebase.ts';
 import { createInitialDeck, type Card, type PrivatePlayer, type PublicPlayer, type Role, type Room } from './gameEngine.ts';
 import { finishLobbyCleanup } from './roomMaintenance.ts';
+import { RESPONSE_TIMEOUT_OPTIONS, DEFAULT_RESPONSE_TIMEOUT_SECONDS } from './responseTiming.ts';
 import type { PlayerAvatarId } from '../types';
 
 const ROOM_IDLE_MS = 30 * 60 * 1000;
@@ -75,7 +76,7 @@ export async function createRoom(displayName: string, avatarInput: string, uid =
         if (inviteSnap.exists()) fail('already-exists', 'ลองสร้างห้องใหม่อีกครั้ง');
         const room: Room = {
           schemaVersion: 3, status: 'lobby', gameState: 'lobby', adminId: actor,
-          cleanupStarted: false,
+          cleanupStarted: false, responseTimeoutSeconds: DEFAULT_RESPONSE_TIMEOUT_SECONDS,
           deckCount: 0, createdAt: serverTimestamp(), lastActivityAt: serverTimestamp(),
           expiresAt: idleExpiry(now), turnOrder: [], currentTurnIndex: 0,
           pendingAction: null, passVotes: [], actionLog: 'รอผู้เล่นเข้าห้อง',
@@ -121,6 +122,28 @@ export async function joinRoom(codeInput: string, displayName: string, avatarInp
     });
   });
   return { roomCode };
+}
+
+export async function setResponseTimeout(codeInput: string, seconds: number, uid = currentUid(), database: Firestore = db) {
+  const actor = currentUid(uid);
+  const roomCode = normalizeRoomCode(codeInput);
+  if (!RESPONSE_TIMEOUT_OPTIONS.some(value => value === seconds)) {
+    fail('invalid-argument', 'กรุณาเลือกเวลา 15, 30, 45 หรือ 60 วินาที');
+  }
+  const roomRef = doc(database, `rooms/${roomCode}`);
+  await runTransaction(database, async transaction => {
+    const roomSnap = await transaction.get(roomRef);
+    if (!roomSnap.exists()) fail('not-found', 'ไม่พบห้องนี้');
+    const room = roomSnap.data() as Room;
+    if (room.adminId !== actor) fail('permission-denied', 'เฉพาะเจ้าของห้องเท่านั้นที่ตั้งเวลาได้');
+    if (room.schemaVersion !== 3 || room.status !== 'lobby' || room.cleanupStarted === true) {
+      fail('failed-precondition', 'ตั้งเวลาได้เฉพาะก่อนเริ่มเกมในล็อบบี้');
+    }
+    transaction.update(roomRef, {
+      responseTimeoutSeconds: seconds,
+      lastActivityAt: serverTimestamp(), expiresAt: idleExpiry(Date.now()),
+    });
+  });
 }
 
 export async function setPlayerReady(codeInput: string, isReady: boolean, uid = currentUid(), database: Firestore = db) {

@@ -4,6 +4,7 @@ import HandGuide from './HandGuide';
 import RoleBadge from './RoleBadge';
 import PlayingCard from './PlayingCard';
 import GameIcon from './GameIcon';
+import ActionCharacter from './ActionCharacter';
 import { actionHelp as actions, getActionLabel, getLivingRoles, getPassConsequence } from '../core/gameHelp';
 
 function Hand({ cards, small = false }: { cards: any[]; small?: boolean }) {
@@ -22,11 +23,13 @@ export default function PlayerActionPanel(props: any) {
   } = props;
   const [category, setCategory] = useState('general');
   const [popupOpen, setPopupOpen] = useState(true);
+  const [animateCharacter, setAnimateCharacter] = useState(true);
   const [showPeekCards, setShowPeekCards] = useState(false);
   const pending = roomData.pendingAction;
   const responding = gameState === 'waiting_for_responses' || gameState === 'waiting_for_block_responses';
   useEffect(() => {
     setPopupOpen(true);
+    setAnimateCharacter(true);
     setShowPeekCards(false);
   }, [gameState, pending?.actionName, pending?.sourceId, pending?.targetId, pending?.blockerId, pending?.blockCharacter]);
 
@@ -65,7 +68,7 @@ export default function PlayerActionPanel(props: any) {
     <p className="event-description">
       {gameState === 'waiting_for_block_responses'
         ? <><b>{blocker?.name}</b> อ้างว่ามี <strong>{pending?.blockCharacter}</strong> เพื่อบล็อก {getActionLabel(pending?.actionName)} ของ {source?.name}</>
-        : <><b>{source?.name}</b> ใช้ <strong>{getActionLabel(pending?.actionName)}</strong>{target && <> กับ <b>{target.name}</b></>}</>}
+        : <><b>{source?.name}</b> {claimedRole && claimedRole !== 'ทั่วไป' && <>อ้างว่ามี <strong>{claimedRole}</strong> เพื่อ</>}ใช้ <strong>{getActionLabel(pending?.actionName)}</strong>{target && <> กับ <b>{target.name}</b></>}</>}
     </p>
     {timeLeft !== null && !isDead && <p className="decision-clock" role="timer">เวลาตัดสินใจ {timeLeft} วินาที</p>}
     {waitingForMe && <aside className="response-guide" aria-label="คำแนะนำการตอบโต้">
@@ -192,6 +195,9 @@ export default function PlayerActionPanel(props: any) {
     </section>
 
     {responding && popupOpen && <Modal className="game-event-dialog" title={gameState === 'waiting_for_block_responses' ? 'มีการประกาศบล็อก' : 'มีการประกาศแอคชั่น'}
-      onClose={() => setPopupOpen(false)}>{responseContent}<p className="muted-copy">ปิดเพื่อดูกระดานได้ แล้วกด “เปิดเหตุการณ์” เพื่อกลับมา · การปิดไม่ใช่การปล่อยผ่าน</p></Modal>}
+      onClose={() => { setAnimateCharacter(false); setPopupOpen(false); }}>
+      <ActionCharacter key={[gameState, pending?.actionName, pending?.sourceId, pending?.targetId, pending?.blockerId, pending?.blockCharacter].join(':')}
+        role={claimedRole} animate={animateCharacter} blocking={gameState === 'waiting_for_block_responses'} />
+      {responseContent}<p className="muted-copy">ปิดเพื่อดูกระดานได้ แล้วกด “เปิดเหตุการณ์” เพื่อกลับมา · การปิดไม่ใช่การปล่อยผ่าน</p></Modal>}
   </div>;
 }

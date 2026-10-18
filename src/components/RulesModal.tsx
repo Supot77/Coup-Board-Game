@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Modal from './Modal';
 import Tutorial from './Tutorial';
+import PlayingCard from './PlayingCard';
 import { actionHelp, roleHelp } from '../core/gameHelp';
 
 export default function RulesModal({ onClose }: { onClose: () => void }) {
@@ -34,7 +35,8 @@ export default function RulesModal({ onClose }: { onClose: () => void }) {
           <h3>ไพ่แต่ละบทบาทช่วยอะไรได้บ้าง</h3>
           <p>ดาวหมายถึงมีบทบาทนั้นบนไพ่ที่ยังไม่เปิดเผย หน้ากากยิ้มหมายถึงต้องสวมบทบาท คุณเลือกอ้างบทบาทที่ไม่มีได้ แต่เสี่ยงเสียไพ่เมื่อถูกจับโกหก</p>
           <div className="rules-role-grid">{Object.entries(roleHelp).map(([role, help]) => <article className="rules-role" key={role}>
-            <h4>{role}</h4><p>{help.action}</p><p>{help.defence}</p>
+            <PlayingCard role={role} className="rules-role-card" />
+            <div className="rules-role-description"><h4>{role}</h4><p>{help.action}</p><p>{help.defence}</p></div>
           </article>)}</div>
         </section>
 
