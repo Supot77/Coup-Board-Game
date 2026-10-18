@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 
 const scenario = new URLSearchParams(location.search).get('scenario');
-const active = scenario !== 'login';
+const active = scenario !== 'login' && scenario !== 'loading-session';
 const value = {
   authUser: active ? { uid: 'player1' } : null,
-  isSessionReady: true,
+  isSessionReady: scenario !== 'loading-session',
   isSessionActive: active,
   beginSession: async (name: string) => ({ token: 'player1', name }),
   recordActivity: () => {},

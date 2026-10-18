@@ -11,6 +11,8 @@ import VictoryScreen from './VictoryScreen.jsx';
 import OpponentList from './OpponentList.jsx';
 import ActionLog from './ActionLog.jsx';
 import PlayerActionPanel from './PlayerActionPanel.jsx';
+import GameIcon from './GameIcon';
+import LoadingScreen from './LoadingScreen';
 
 const formatGameTime = (totalSeconds: number) => {
   const mins = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
@@ -191,21 +193,24 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules }: 
     finally { setIsProcessing(false); }
   };
 
-  if (!roomData || !myPlayer) return <div>กำลังโหลดข้อมูลห้อง…</div>;
+  if (!roomData || !myPlayer) return <LoadingScreen message="กำลังโหลดข้อมูลห้อง" />;
   const roomForUi: RoomData = { ...roomData, drawnCards: undefined, exchangeOptions };
   const canRespond = !myPlayer.isDead && waitingForMe;
 
   return (
-    <div className="gameboard-bg game-shell text-[#e2e0e8]">
-      <header className="game-header flex items-center justify-between px-3 lg:px-6 shrink-0 border-b border-white/[0.03]">
-        <h1 className="font-cinzel text-dark-gold text-lg lg:text-2xl font-bold tracking-[1px] lg:tracking-[2px] m-0">COUP</h1>
-        <div className="flex gap-1.5 lg:gap-[10px] items-center">
-          {roomData.gameStartedAt && <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2">⏱️ <span className="hidden sm:inline">เวลาเล่น:</span> {formatGameTime(gameTime)}</div>}
-          <div className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium flex items-center gap-1 lg:gap-2">🃏 <span className="hidden sm:inline">ไพ่กองกลาง:</span> {roomData.deckCount ?? 0}</div>
-          <button aria-label="เปิดกติกา" className="bg-[rgba(241,196,15,0.15)] border border-[rgba(212,175,55,0.2)] text-[#f1c40f] py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium cursor-pointer" onClick={onShowRules}>📖 <span className="hidden sm:inline">กติกา</span></button>
-          {roomData.adminId === user.token && <button aria-label="ยุติเกม" disabled={isProcessing} className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-[#fca5a5] py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium cursor-pointer" onClick={handleAdminReset}>🔄 <span className="hidden sm:inline">ยุติเกม</span></button>}
-          <button aria-label="ออกจากเกม" disabled={isProcessing} className="bg-[rgba(212,175,55,0.1)] border border-[rgba(212,175,55,0.2)] text-dark-gold py-1.5 px-2.5 lg:py-2 lg:px-4 rounded-full text-[11px] lg:text-[13px] font-medium cursor-pointer" onClick={handleSurrender}>🚪 <span className="hidden sm:inline">ออก</span></button>
+    <div className="gameboard-bg game-shell">
+      <header className="game-header">
+        <div className="game-brand"><h1>COUP</h1><span>THE SECRET COUNCIL</span></div>
+        <div className="game-room-label"><span>ห้อง</span><strong>{roomCode}</strong></div>
+        <div className="game-header-stats">
+          {roomData.gameStartedAt && <span className="game-stat" aria-label={`เวลาเล่น ${formatGameTime(gameTime)}`}><GameIcon kind="clock" /><span className="game-stat-label">เวลาเล่น</span><strong>{formatGameTime(gameTime)}</strong></span>}
+          <span className="game-stat" aria-label={`ไพ่กองกลาง ${roomData.deckCount ?? 0} ใบ`}><GameIcon kind="cards" /><span className="game-stat-label">กองกลาง</span><strong>{roomData.deckCount ?? 0}</strong></span>
         </div>
+        <nav className="game-header-controls" aria-label="จัดการเกม">
+          <button aria-label="เปิดกติกา" className="game-rules-button" onClick={onShowRules}><GameIcon kind="book" /><span>กติกา</span></button>
+          {roomData.adminId === user.token && <button aria-label="ยุติเกม" disabled={isProcessing} onClick={handleAdminReset}><GameIcon kind="reset" /><span>ยุติเกม</span></button>}
+          <button aria-label="ออกจากเกม" disabled={isProcessing} onClick={handleSurrender}><GameIcon kind="exit" /><span>ออก</span></button>
+        </nav>
       </header>
 
       <nav className="mobile-tabs" aria-label="เมนูเกม">

@@ -11,7 +11,7 @@ These instructions describe the user-requested UI refresh for this repository. T
 
 ## Goal
 
-Refresh the game UI to the “The Secret Council” look while preserving real gameplay and making the lobby table and readiness state the signature interaction. Implement the working UI, not a static screenshot. Use HTML, CSS, and SVG for layout, table, chairs, cards, controls, and status indicators. Use generated bitmap art only when it improves the result; keep it sparse and consistent with the command pack.
+Refresh the game UI to the “The Secret Council” look while preserving real gameplay and making the lobby table and readiness state the signature interaction. Implement the working UI, not a static screenshot. Use HTML, CSS, and SVG for layout, chairs, cards, controls, and status indicators. The user subsequently approved a decorative long-table illustration and shadowed male/female frame-by-frame avatar art; keep occupants, labels, controls, and readiness separate from the tabletop bitmap.
 
 ## Visual direction
 
@@ -27,10 +27,10 @@ This is the main new interaction requested by the user.
 
 ### Table layout
 
-- Show exactly six fixed chair positions around a round council table on desktop, even when fewer than six players are present. Build the table and chairs in CSS/SVG so live occupants can be mapped reliably to seats.
+- Show exactly six fixed seat positions across the far side of a long council table on desktop, even when fewer than six players are present. All occupants face the viewer so everyone can see the approved readiness animation. This user-approved revision supersedes the original round-table concept. The decorative tabletop is reusable art; live seats and occupants remain DOM/CSS/SVG components.
 - Populate occupied chairs from the live room roster. Each occupied seat shows the display name, a discreet “คุณ” marker for the viewer, an owner marker for the room owner, and explicit ready/not-ready text and icon. Do not show game coins or role cards in the pre-game lobby.
 - Keep unoccupied chairs visible as quiet placeholders labelled “ที่นั่งว่าง”. The player count reflects the roster, not the number of chairs.
-- On mobile, preserve the six-seat model in a compact table plus a readable six-row seat list or similarly clear responsive arrangement. Never hide the viewer's readiness control or the owner's start/leave controls.
+- At compact widths, preserve the six-seat model in two rows of three front-facing occupants with a readable six-row seat list. Keep the mobile readiness control reachable while viewing the animation, and retain owner start/leave controls.
 - Retain the current room code behavior: eight allowed uppercase letters from `A-H, J-N, P-Z`, excluding `I` and `O`. Keep copy-code, join errors, kick permissions, leave, and owner transfer behavior intact.
 
 ### Ready state and start rule
@@ -49,7 +49,7 @@ Use calm one-shot feedback. Motion should explain a state change, not keep the t
 
 - After room creation, settle the table and six chair positions once; the owner appears in their chair with a short fade and a few pixels of movement.
 - When someone joins, animate only that seat once (about 160–220 ms, small opacity/vertical transition).
-- Toggling ready changes a simple avatar silhouette from relaxed to slightly leaning toward the table. Pair the pose with the explicit text and icon. Use a short teal/check fade or one small scale-in (about 180–240 ms).
+- Toggling ready plays the approved shadowed male/female sprite art from relaxed to slightly leaning toward the table: twelve frames at 24fps, then stop. Reverse from the current frame when readiness is cancelled, initialize at the current endpoint for an existing roster, and pair the pose with explicit text and icon. Use the neutral silhouette for legacy/missing or failed avatar art. Fixed dark clothing replaces the initial automatic-color concept.
 - When all current players are ready, give the table edge one restrained teal highlight, then stop. Do not pulse forever.
 - Do not use realistic character rigging, repeated bouncing, shaking, flashing, or motion that delays input. Respect `prefers-reduced-motion`; when enabled, replace movement with an immediate state and color change.
 

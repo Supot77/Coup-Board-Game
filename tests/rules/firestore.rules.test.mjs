@@ -17,7 +17,7 @@ before(async () => {
   });
   await env.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
-    const publicPlayer = { name: 'Player', coins: 2, isDead: false, influenceCount: 2, revealedCards: [] };
+    const publicPlayer = { name: 'Player', coins: 2, isDead: false, influenceCount: 2, revealedCards: [], avatarId: 'male', isReady: false };
     await setDoc(doc(db, 'rooms/GAMEPLAY'), {
       schemaVersion: 3, status: 'playing', gameState: 'waiting_for_action', adminId: 'host', cleanupStarted: false,
       lastActivityAt: new Date(), turnOrder: ['host', 'guest'], currentTurnIndex: 0,
@@ -81,7 +81,7 @@ test('join atomically adds one member and rejects writes that bypass membership 
   const joinBatch = writeBatch(guest);
   joinBatch.update(doc(guest, 'roomInvites/BCDEFGHJ'), { playerCount: 2 });
   joinBatch.set(doc(guest, 'rooms/BCDEFGHJ/players/guest'), {
-    name: 'Guest', coins: 2, isDead: false, influenceCount: 2, revealedCards: [],
+    name: 'Guest', coins: 2, isDead: false, influenceCount: 2, revealedCards: [], avatarId: 'female', isReady: false,
   });
   joinBatch.set(doc(guest, 'rooms/BCDEFGHJ/privatePlayers/guest'), { cards: [], exchangeOptions: [] });
   await assertSucceeds(joinBatch.commit());
@@ -97,10 +97,27 @@ test('join atomically adds one member and rejects writes that bypass membership 
   const fullBatch = writeBatch(fullRoom);
   fullBatch.update(doc(fullRoom, 'roomInvites/FULLROOM'), { playerCount: 7 });
   fullBatch.set(doc(fullRoom, 'rooms/FULLROOM/players/outsider'), {
-    name: 'Outsider', coins: 2, isDead: false, influenceCount: 2, revealedCards: [],
+    name: 'Outsider', coins: 2, isDead: false, influenceCount: 2, revealedCards: [], avatarId: 'male', isReady: false,
   });
   fullBatch.set(doc(fullRoom, 'rooms/FULLROOM/privatePlayers/outsider'), { cards: [], exchangeOptions: [] });
   await assertFails(fullBatch.commit());
+});
+
+test('a lobby member can change only their own readiness, never after the game starts', async () => {
+  const host = env.authenticatedContext('host').firestore();
+  const guest = env.authenticatedContext('guest').firestore();
+  const outsider = env.authenticatedContext('outsider').firestore();
+  await assertSucceeds(updateDoc(doc(host, 'rooms/BCDEFGHJ/players/host'), { isReady: true }));
+  await assertSucceeds(updateDoc(doc(guest, 'rooms/BCDEFGHJ/players/guest'), { isReady: true }));
+  await assertSucceeds(updateDoc(doc(guest, 'rooms/BCDEFGHJ/players/guest'), { isReady: false }));
+  await assertFails(updateDoc(doc(host, 'rooms/BCDEFGHJ/players/guest'), { isReady: true }));
+  await assertFails(updateDoc(doc(host, 'rooms/GAMEPLAY/players/guest'), { isReady: true }));
+  await assertFails(updateDoc(doc(host, 'rooms/GAMEPLAY/players/host'), { isReady: true }));
+  await assertFails(updateDoc(doc(guest, 'rooms/BCDEFGHJ/players/host'), { isReady: true }));
+  await assertFails(updateDoc(doc(outsider, 'rooms/BCDEFGHJ/players/host'), { isReady: true }));
+  await assertFails(updateDoc(doc(host, 'rooms/BCDEFGHJ/players/host'), { isReady: true, coins: 99 }));
+  await assertFails(updateDoc(doc(host, 'rooms/BCDEFGHJ/players/host'), { name: 'Changed' }));
+  await assertFails(updateDoc(doc(guest, 'rooms/GAMEPLAY/players/guest'), { isReady: true }));
 });
 
 test('members can submit only their own immutable command; only the room host can write a result', async () => {

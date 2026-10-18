@@ -3,12 +3,15 @@ import Login from './components/Login';
 import Lobby from './components/Lobby';
 import { User } from './types';
 import { useSession } from './components/SessionProvider';
+import LoadingScreen from './components/LoadingScreen';
+import { useStartupLoading } from './core/useStartupLoading';
 
 const RulesModal = lazy(() => import('./components/RulesModal'));
 const GameBoard = lazy(() => import('./components/GameBoard'));
 
 function App() {
   const { authUser, isSessionReady, isSessionActive, logout } = useSession();
+  const startup = useStartupLoading(isSessionReady);
   const [currentView, setCurrentView] = useState<string>('login');
   const [user, setUser] = useState<User>({ token: '', name: '' });
   const [playingRoomCode, setPlayingRoomCode] = useState<string | null>(null);
@@ -47,10 +50,12 @@ function App() {
   }, []);
   const handleLeaveGame = useCallback(() => setCurrentView('lobby'), []);
 
+  if (startup.visible) return <LoadingScreen progress={startup.progress} detail={startup.detail} />;
+
   return (
     <>
       {/* หน้าต่างกติกา */}
-      {showRules && <Suspense fallback={<p className="notice-reopen utility-button" role="status">กำลังโหลดกติกา…</p>}><RulesModal onClose={() => setShowRules(false)} /></Suspense>}
+      {showRules && <Suspense fallback={<LoadingScreen message="กำลังโหลดกติกา" />}><RulesModal onClose={() => setShowRules(false)} /></Suspense>}
 
       {/* ควบคุมการแสดงผลหน้าจอหลัก */}
       {currentView === 'login' && <Login onLoginSuccess={handleLoginSuccess} onShowRules={() => setShowRules(true)} />}
@@ -58,7 +63,7 @@ function App() {
       
       {/* ส่ง onShowRules เข้าไปใน GameBoard ด้วย */}
       {currentView === 'game' && playingRoomCode && (
-        <Suspense fallback={<p className="notice-reopen utility-button" role="status">กำลังโหลดกระดานเกม…</p>}>
+        <Suspense fallback={<LoadingScreen message="กำลังโหลดกระดานเกม" />}>
         <GameBoard 
           roomCode={playingRoomCode} 
           user={user} 

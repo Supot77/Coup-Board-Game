@@ -25,8 +25,8 @@ function BasicsTutorial({ onExit }: { onExit: () => void }) {
     {step === 0 && <>
       <p>เริ่มเกมด้วยไพ่คว่ำ 2 ใบและเงิน 2 เหรียญ ไพ่แต่ละใบแทน 1 อิทธิพล คุณชนะเมื่อเป็นคนสุดท้ายที่ยังมีไพ่ไม่เปิดเผย</p>
       <div className="tutorial-hand">
-        <figure><img src="/img/duk.jpg" alt="ไพ่ตัวอย่าง Duke" /><figcaption>Duke</figcaption></figure>
-        <figure><img src="/img/cont.jpg" alt="ไพ่ตัวอย่าง Contessa" /><figcaption>Contessa</figcaption></figure>
+        <figure><img src="/img/DUKE.png" alt="ไพ่ตัวอย่าง Duke" /><figcaption>Duke</figcaption></figure>
+        <figure><img src="/img/CONTESSA.png" alt="ไพ่ตัวอย่าง Contessa" /><figcaption>Contessa</figcaption></figure>
       </div>
       <p>สมมติว่าคุณมี Duke กับ Contessa คุณใช้ Tax เพื่อรับ 3 เหรียญ และบล็อกการลอบสังหารด้วย Contessa ได้</p>
       <p>ดาวหมายถึงมีไพ่บทบาทนั้นที่ยังใช้ได้ หน้ากากยิ้มหมายถึงต้องอ้างบทบาทที่ไม่มีในมือ</p>

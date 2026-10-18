@@ -1,9 +1,6 @@
 import type { Player, RoomData } from '../types';
-
-const cardImages: Record<string, string> = {
-  Duke: '/img/duk.jpg', Assassin: '/img/ass.jpg', Captain: '/img/cap.jpg',
-  Ambassador: '/img/amb.jpg', Contessa: '/img/cont.jpg',
-};
+import PlayingCard from './PlayingCard';
+import PlayerAvatar from './PlayerAvatar';
 
 export default function OpponentList({ players, userToken, roomData }: {
   players: Player[]; userToken: string; roomData: RoomData;
@@ -30,20 +27,16 @@ export default function OpponentList({ players, userToken, roomData }: {
         })();
         return <article key={player.id} className={`opponent ${isActive ? 'opponent-active' : ''} ${player.isDead ? 'opponent-eliminated' : ''}`}>
           <div className="opponent-heading">
+            <span className="opponent-avatar"><PlayerAvatar avatarId={player.avatarId} isReady={false} seatDirection="top" /></span>
             <span className="player-name">{player.name}{player.id === userToken ? ' (คุณ)' : ''}</span>
             {isActive && !player.isDead && <span className="turn-badge">ถึงตา</span>}
             {player.isDead && <span className="eliminated-badge">ตกรอบ</span>}
           </div>
           <div className="opponent-details">
             <div className="opponent-cards">
-              {cards.map((card, index) => <div key={index}
-                className={`opponent-card ${card.isDead ? 'revealed-card' : 'opponent-card-alive'}`}
-                aria-label={card.isDead ? `${card.character} เปิดเผยแล้ว` : 'ไพ่คว่ำ'}>
-                {card.isDead ? <>
-                  <img src={cardImages[card.character]} alt="" />
-                  <span>{card.character}</span>
-                </> : <span aria-hidden="true">♜</span>}
-              </div>)}
+              {cards.map((card, index) => <PlayingCard key={index} role={card.character}
+                faceDown={!card.isDead} revealed={card.isDead}
+                className={`opponent-card ${card.isDead ? 'revealed-card' : 'opponent-card-alive'}`} />)}
             </div>
             <span className="player-coins" aria-label={`${player.coins} เหรียญ`}>🪙 {player.coins}</span>
           </div>

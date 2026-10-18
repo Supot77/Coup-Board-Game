@@ -3,7 +3,7 @@ import { tutorialScenarios, type PracticeChoice, type PracticePlayer, type Pract
 import RoleBadge from './RoleBadge';
 import { roleHelp } from '../core/gameHelp';
 
-const images: Record<string, string> = { Duke: '/img/duk.jpg', Assassin: '/img/ass.jpg', Captain: '/img/cap.jpg', Ambassador: '/img/amb.jpg', Contessa: '/img/cont.jpg' };
+const images: Record<string, string> = { Duke: '/img/DUKE.png', Assassin: '/img/ASSASSIN.png', Captain: '/img/CAPTAIN.png', Ambassador: '/img/AMBASSADOR.png', Contessa: '/img/CONTESSA.png' };
 const clone = (players: PracticePlayer[]) => players.map(player => ({ ...player, cards: player.cards.map(card => ({ ...card })) }));
 
 function Simulation({ scenario }: { scenario: TutorialScenario }) {

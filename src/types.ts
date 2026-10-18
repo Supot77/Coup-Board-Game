@@ -3,6 +3,8 @@ export interface User {
   name: string;
 }
 
+export type PlayerAvatarId = 'male' | 'female';
+
 export interface Card {
   character: string;
   isDead: boolean;
@@ -18,6 +20,7 @@ export interface Player {
   isAlive: boolean;
   isDead?: boolean;
   isReady?: boolean;
+  avatarId?: PlayerAvatarId;
 }
 
 export interface GameState {

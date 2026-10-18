@@ -1,3 +1,5 @@
+import type { PlayerAvatarId } from '../types';
+
 export type Role = 'Duke' | 'Assassin' | 'Captain' | 'Ambassador' | 'Contessa';
 export type Card = { character: Role; isDead: boolean; id: string };
 export type PublicPlayer = {
@@ -6,6 +8,8 @@ export type PublicPlayer = {
   isDead: boolean;
   influenceCount: number;
   revealedCards: { slot: number; character: Role }[];
+  isReady?: boolean;
+  avatarId?: PlayerAvatarId;
 };
 export type PrivatePlayer = { cards: Card[]; exchangeOptions: Card[] };
 export type PendingAction = {

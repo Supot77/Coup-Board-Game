@@ -15,6 +15,7 @@ export default function Login({ onLoginSuccess, onShowRules }: { onLoginSuccess:
   }, []);
 
   const handleLogin = async () => {
+    if (isSigningIn || !isSessionReady) return;
     if (!username.trim()) {
       notify("กรุณากรอกชื่อผู้เล่นก่อนเริ่มเล่น");
       return;
@@ -35,27 +36,35 @@ export default function Login({ onLoginSuccess, onShowRules }: { onLoginSuccess:
   };
 
   return (
-    <div className="login-bg fixed top-0 left-0 w-screen h-screen flex items-center justify-center lg:justify-end px-4 lg:px-0 lg:pr-[8%] box-border z-10 bg-[linear-gradient(to_right,rgba(0,0,0,0)_40%,rgba(10,10,10,0.95)_85%),url('/bg-login.jpg')] bg-cover bg-center bg-no-repeat">
-      <div className="login-card bg-[rgba(15,15,15,0.4)] backdrop-blur-[20px] backdrop-saturate-[120%] border border-[rgba(241,196,15,0.2)] shadow-[0_24px_48px_rgba(0,0,0,0.6)] w-full max-w-[400px] rounded-[24px] p-[40px] text-center m-0">
-        <h1 className="font-semibold text-[32px] mb-[8px] text-gold [text-shadow:2px_2px_4px_rgba(0,0,0,0.8)]">COUP</h1>
-        <p className="text-[#cccccc] text-[15px] mt-0 mb-[32px]">กรอกชื่อผู้เล่นเพื่อเริ่มเล่น · หากไม่มีการใช้งาน 30 นาที ต้องเริ่มเข้าสู่ระบบใหม่</p>
-        <input 
-          type="text" 
-          placeholder="ชื่อผู้เล่นของคุณ" 
-          value={username} 
-          onChange={(e) => setUsername(e.target.value)} 
-          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void handleLogin(); } }}
-          className="bg-[rgba(0,0,0,0.5)] border border-[rgba(255,255,255,0.1)] mb-[24px] text-gold placeholder:text-[#666666] focus:bg-[rgba(0,0,0,0.8)] focus:border-gold focus:shadow-[0_0_0_4px_rgba(241,196,15,0.15)] outline-none w-full p-2 rounded"
-        />
-        <button 
-          className="bg-[linear-gradient(135deg,#ffbc1f_0%,#ffbc1f_100%)] text-[#000000] w-full text-[18px] tracking-[0.5px] border border-[rgba(241,196,15,0.3)] shadow-[0_4px_15px_rgba(0,0,0,0.5)] m-0 p-2 cursor-pointer hover:not-disabled:bg-[linear-gradient(135deg,#ffffff_0%,#ffffff_0%)] hover:not-disabled:border-[rgba(241,196,15,0.6)] hover:not-disabled:scale-[0.98] hover:not-disabled:shadow-[0_2px_8px_rgba(0,0,0,0.8)] hover:not-disabled:filter-none transition-all duration-200 rounded" 
-          disabled={!isSessionReady || isSigningIn}
-          onClick={() => { void handleLogin(); }}
-        >
-          {isSigningIn ? 'กำลังเข้าสู่ระบบ…' : 'เริ่มเล่น'}
+    <main className="login-bg entry-page">
+      <header className="entry-masthead"><span className="entry-monogram" aria-hidden="true">C</span><span>THE SECRET COUNCIL</span><span className="entry-edition">เกมแห่งการชิงอำนาจ</span></header>
+      <div className="entry-layout">
+      <aside className="entry-story" aria-label="เกี่ยวกับเกม">
+        <span className="entry-kicker">อำนาจอยู่ในมือคุณ</span>
+        <p>ทุกคำพูด<br />เปลี่ยนเกมได้<span>.</span></p>
+        <div className="entry-story-foot"><span>บลัฟให้แนบเนียน จับโกหกให้ถูกคน</span><span>ผู้เล่น 2–6 คน</span></div>
+      </aside>
+      <section className="login-card entry-card" aria-labelledby="entry-title">
+        <div className="entry-seal" aria-hidden="true">✦</div>
+        <p className="eyebrow">THE SECRET COUNCIL</p>
+        <h1 id="entry-title">COUP</h1>
+        <p className="entry-subtitle">เริ่มต้นเกมชิงอำนาจ</p>
+        <div className="entry-divider" aria-hidden="true"><span>◆</span></div>
+        <p className="login-intro">ตั้งชื่อของคุณ แล้วชวนเพื่อนมาร่วมสภาลับ</p>
+        <form onSubmit={event => { event.preventDefault(); void handleLogin(); }}>
+        <label htmlFor="player-name">ชื่อผู้เล่น</label>
+        <input id="player-name" type="text" autoComplete="nickname" placeholder="ชื่อผู้เล่นของคุณ" value={username} aria-describedby="entry-name-help"
+          onChange={event => setUsername(event.target.value)} />
+        <p id="entry-name-help" className="entry-name-help">ชื่อนี้จะแสดงให้ผู้เล่นคนอื่นเห็นในห้อง</p>
+        <button type="submit" className="button-primary login-submit" disabled={!isSessionReady || isSigningIn} aria-live="polite">
+          <span>{isSigningIn ? 'กำลังเข้าสู่ระบบ…' : !isSessionReady ? 'กำลังเตรียมเซสชัน…' : 'เริ่มเล่น'}</span><span aria-hidden="true">↗</span>
         </button>
-        <button className="utility-button w-full mt-3" onClick={onShowRules}>วิธีเล่นและกติกา</button>
+        </form>
+        <button type="button" className="button-secondary login-rules" onClick={onShowRules}>วิธีเล่นและกติกา</button>
+        <p className="entry-session-note">หากไม่มีการใช้งาน 30 นาที<br />ระบบจะให้เริ่มเข้าสู่ระบบใหม่</p>
+      </section>
       </div>
-    </div>
+      <footer className="entry-footer"><span>COUP · THE SECRET COUNCIL</span><span>ซ่อนไพ่ อ่านใจ ชิงอำนาจ</span></footer>
+    </main>
   );
 }

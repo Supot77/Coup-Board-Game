@@ -52,3 +52,13 @@ The live site loads at [coup-49ffc.web.app](https://coup-49ffc.web.app). A tempo
 - Hosting deployed: 2026-10-18; live version released at `https://coup-49ffc.web.app`
 - Live checks: site load and temporary two-guest room/game/privacy/cleanup smoke passed; no temporary room or test accounts remain
 - Billing account/trial changes: none; Firestore reports `freeTier: true`
+
+## Secret Council UI and readiness release — 2026-10-18
+
+- The user explicitly authorized deployment and GitHub delivery of the completed UI refresh, including the long-table lobby, shadowed male/female readiness sprites, PNG role cards, sword loading screen, game-board styling and victory presentation.
+- Deployed `firestore:rules` first to `coup-49ffc`; compilation and release to `cloud.firestore` succeeded. Deployed Hosting next; Firebase finalized and released the 42-file build at `https://coup-49ffc.web.app`.
+- Rules now validate new avatar/readiness fields and allow only a member's own boolean readiness change in a live lobby. The authoritative start transaction requires 2–6 current members all ready and clears readiness on start/reset. Private-hand boundaries and the Spark-only architecture remain.
+- Before release: lint, TypeScript, production build, session-clock (6/6), Spark engine (8/8), Spark client commands (6/6), Firestore Rules (6/6), full isolated UI regression, focused lobby-motion checks and sword-loading checks passed. Emulator runs used demo project IDs.
+- Production verification: 19 HTTP resources returned 200 and matched the rebuilt local artifacts byte-for-byte by SHA-256, including the entry HTML/bundles, male/female sprites, long table, loading sword and Duke portrait. The production login page was rendered and visually inspected. Evidence: `output/release-2026-10-18/live-login.png` and `asset-manifest.json`.
+- This release verification did not create a live multiplayer room or exercise gameplay in production. The existing earlier production smoke record above describes the prior release, not this UI release.
+- No Functions, Scheduler, indexes, Realtime Database rules, billing-plan or trial changes were deployed. Deployment cache remains local and is excluded from the UI commit.

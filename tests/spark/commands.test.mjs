@@ -5,7 +5,7 @@ import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
 import {
   connectFirestoreEmulator, collection, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, Timestamp,
 } from 'firebase/firestore';
-import { createRoom, joinRoom, leaveRoom, kickPlayer, startGame, resetGame } from '../../src/core/roomCommands.ts';
+import { createRoom, joinRoom, leaveRoom, kickPlayer, startGame, resetGame, setPlayerReady } from '../../src/core/roomCommands.ts';
 import { submitGameCommand } from '../../src/core/gameCommands.ts';
 import { processHostCommand } from '../../src/core/hostCommandProcessor.ts';
 import { markIdleLobbyForCleanup, ROOM_IDLE_LIMIT_MS } from '../../src/core/roomMaintenance.ts';
@@ -43,17 +43,48 @@ after(async () => {
 });
 
 test('creates a private schema-3 room and joins by known eight-character code', async () => {
-  ({ roomCode } = await createRoom('Host', host.uid, host.db));
+  ({ roomCode } = await createRoom('Host', 'male', host.uid, host.db));
   assert.match(roomCode, /^[A-HJ-NP-Z]{8}$/);
-  await joinRoom(roomCode, 'Guest', guest.uid, guest.db);
+  await joinRoom(roomCode, 'Guest', 'female', guest.uid, guest.db);
 
   const room = (await getDoc(doc(host.db, `rooms/${roomCode}`))).data();
   assert.equal(room.schemaVersion, 3);
   assert.equal(room.deck, undefined);
   assert.equal((await getDocs(collection(host.db, `rooms/${roomCode}/players`))).size, 2);
+  assert.equal((await getDoc(doc(host.db, `roomInvites/${roomCode}`))).data().playerCount, 2);
+  assert.equal((await getDoc(doc(host.db, `rooms/${roomCode}/players/${host.uid}`))).data().avatarId, 'male');
+  assert.equal((await getDoc(doc(host.db, `rooms/${roomCode}/players/${host.uid}`))).data().isReady, false);
+  assert.equal((await getDoc(doc(host.db, `rooms/${roomCode}/players/${guest.uid}`))).data().avatarId, 'female');
+  assert.equal((await getDoc(doc(host.db, `rooms/${roomCode}/players/${guest.uid}`))).data().isReady, false);
   assert.equal((await getDoc(doc(guest.db, `rooms/${roomCode}/privatePlayers/${guest.uid}`))).exists(), true);
   await assert.rejects(getDoc(doc(outsider.db, `rooms/${roomCode}`)));
   await assert.rejects(getDocs(collection(guest.db, 'roomInvites')));
+  await setPlayerReady(roomCode, true, host.uid, host.db);
+  await setPlayerReady(roomCode, true, guest.uid, guest.db);
+});
+
+test('readiness is self-controlled only in the lobby and ready-only start resets the roster state', async () => {
+  const readyRoom = (await createRoom('Ready host', 'male', host.uid, host.db)).roomCode;
+  await joinRoom(readyRoom, 'Ready guest', 'female', guest.uid, guest.db);
+  await assert.rejects(startGame(readyRoom, host.uid, host.db), /กดพร้อม/);
+  await setPlayerReady(readyRoom, true, host.uid, host.db);
+  await assert.rejects(startGame(readyRoom, host.uid, host.db), /กดพร้อม/);
+  await setPlayerReady(readyRoom, true, guest.uid, guest.db);
+  await assert.rejects(setPlayerReady(readyRoom, false, outsider.uid, outsider.db));
+  await assert.rejects(startGame(readyRoom, guest.uid, guest.db));
+  await startGame(readyRoom, host.uid, host.db);
+  for (const player of [host, guest]) {
+    const record = (await getDoc(doc(player.db, `rooms/${readyRoom}/players/${player.uid}`))).data();
+    assert.equal(record.isReady, false);
+    assert.equal(record.avatarId, player === host ? 'male' : 'female');
+    await assert.rejects(setPlayerReady(readyRoom, true, player.uid, player.db));
+  }
+  await resetGame(readyRoom, host.uid, host.db);
+  for (const player of [host, guest]) {
+    const record = (await getDoc(doc(player.db, `rooms/${readyRoom}/players/${player.uid}`))).data();
+    assert.equal(record.isReady, false);
+    assert.equal(record.avatarId, player === host ? 'male' : 'female');
+  }
 });
 
 test('host deals cards, processes an authored action once, and rejects an out-of-turn action', async () => {
@@ -86,30 +117,35 @@ test('host deals cards, processes an authored action once, and rejects an out-of
 });
 
 test('the host alone can start, kick, and reset the lobby, and room membership stays bounded', async () => {
-  const { roomCode: managementRoom } = await createRoom('Host', host.uid, host.db);
-  await joinRoom(managementRoom, 'Guest', guest.uid, guest.db);
+  const { roomCode: managementRoom } = await createRoom('Host', 'male', host.uid, host.db);
+  await joinRoom(managementRoom, 'Guest', 'female', guest.uid, guest.db);
   await assert.rejects(startGame(managementRoom, guest.uid, guest.db));
   await assert.rejects(resetGame(managementRoom, guest.uid, guest.db));
   await kickPlayer(managementRoom, guest.uid, host.uid, host.db);
   await assert.rejects(getDoc(doc(guest.db, `rooms/${managementRoom}`)));
-  await joinRoom(managementRoom, 'Guest', guest.uid, guest.db);
+  assert.equal((await getDoc(doc(host.db, `roomInvites/${managementRoom}`))).data().playerCount, 1);
+  await joinRoom(managementRoom, 'Guest', 'female', guest.uid, guest.db);
+  assert.equal((await getDoc(doc(host.db, `roomInvites/${managementRoom}`))).data().playerCount, 2);
   const extraPlayers = [];
   for (let index = 0; index < 4; index++) {
     const player = await createClient(`extra-${index}`);
     extraPlayers.push(player);
-    await joinRoom(managementRoom, `Extra ${index}`, player.uid, player.db);
+    await joinRoom(managementRoom, `Extra ${index}`, index % 2 === 0 ? 'male' : 'female', player.uid, player.db);
   }
-  await assert.rejects(joinRoom(managementRoom, 'Outsider', outsider.uid, outsider.db));
+  await assert.rejects(joinRoom(managementRoom, 'Outsider', 'male', outsider.uid, outsider.db));
+  assert.equal((await getDoc(doc(host.db, `roomInvites/${managementRoom}`))).data().playerCount, 6);
+  await Promise.all([host, guest, ...extraPlayers].map(player => setPlayerReady(managementRoom, true, player.uid, player.db)));
   await startGame(managementRoom, host.uid, host.db);
   await assert.rejects(kickPlayer(managementRoom, extraPlayers[0].uid, guest.uid, guest.db));
   await resetGame(managementRoom, host.uid, host.db);
   const invite = (await getDoc(doc(host.db, `roomInvites/${managementRoom}`))).data();
   assert.equal(invite.status, 'lobby');
+  assert.equal(invite.playerCount, 6);
 });
 
 test('members can leave safely and an inactive lobby is closed after 30 minutes', async () => {
-  const { roomCode: leavingRoom } = await createRoom('Host', host.uid, host.db);
-  await joinRoom(leavingRoom, 'Guest', guest.uid, guest.db);
+  const { roomCode: leavingRoom } = await createRoom('Host', 'male', host.uid, host.db);
+  await joinRoom(leavingRoom, 'Guest', 'female', guest.uid, guest.db);
   await leaveRoom(leavingRoom, guest.uid, guest.db);
   const roomAfterGuestLeaves = (await getDoc(doc(host.db, `rooms/${leavingRoom}`))).data();
   assert.equal(roomAfterGuestLeaves.adminId, host.uid);
@@ -117,11 +153,40 @@ test('members can leave safely and an inactive lobby is closed after 30 minutes'
   await leaveRoom(leavingRoom, host.uid, host.db);
   assert.equal((await getDoc(doc(host.db, `roomInvites/${leavingRoom}`))).exists(), false);
 
-  const { roomCode: idleRoom } = await createRoom('Idle', host.uid, host.db);
+  const { roomCode: idleRoom } = await createRoom('Idle', 'male', host.uid, host.db);
   assert.equal(await markIdleLobbyForCleanup(idleRoom, host.uid, Date.now(), host.db), false);
   await updateDoc(doc(host.db, `rooms/${idleRoom}`), {
     lastActivityAt: Timestamp.fromMillis(Date.now() - ROOM_IDLE_LIMIT_MS),
   });
   assert.equal(await markIdleLobbyForCleanup(idleRoom, host.uid, Date.now(), host.db), true);
   assert.equal((await getDoc(doc(host.db, `roomInvites/${idleRoom}`))).exists(), false);
+});
+
+test('a concurrent join cannot sneak an unready player into a started game', async () => {
+  const concurrentRoom = (await createRoom('Host', 'male', host.uid, host.db)).roomCode;
+  await joinRoom(concurrentRoom, 'Guest', 'female', guest.uid, guest.db);
+  await setPlayerReady(concurrentRoom, true, host.uid, host.db);
+  await setPlayerReady(concurrentRoom, true, guest.uid, guest.db);
+  const newcomer = await createClient('concurrent-newcomer');
+
+  const [startResult, joinResult] = await Promise.allSettled([
+    startGame(concurrentRoom, host.uid, host.db),
+    joinRoom(concurrentRoom, 'Newcomer', 'male', newcomer.uid, newcomer.db),
+  ]);
+  const room = (await getDoc(doc(host.db, `rooms/${concurrentRoom}`))).data();
+  const invite = (await getDoc(doc(host.db, `roomInvites/${concurrentRoom}`))).data();
+  const roster = await getDocs(collection(host.db, `rooms/${concurrentRoom}/players`));
+
+  if (room.status === 'playing') {
+    assert.equal(roster.size, 2);
+    assert.equal(invite.playerCount, 2);
+    assert.equal(joinResult.status, 'rejected');
+  } else {
+    assert.equal(room.status, 'lobby');
+    assert.equal(roster.size, 3);
+    assert.equal(invite.playerCount, 3);
+    assert.equal(startResult.status, 'rejected');
+    assert.match(startResult.reason.message, /รายชื่อผู้เล่น|กดพร้อม/);
+    assert.equal((await getDoc(doc(host.db, `rooms/${concurrentRoom}/players/${newcomer.uid}`))).data().isReady, false);
+  }
 });

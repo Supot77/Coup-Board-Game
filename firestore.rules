@@ -54,6 +54,20 @@ service cloud.firestore {
       return roomMember(roomCode) && get(roomPath(roomCode)).data.adminId == request.auth.uid;
     }
 
+    function hostPlayerUpdate(roomCode) {
+      return isHost(roomCode)
+        && cleanupHasNotStarted(get(roomPath(roomCode)).data)
+        && ((get(roomPath(roomCode)).data.status == 'playing'
+            && getAfter(roomPath(roomCode)).data.status == 'playing'
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isReady']))
+          || (get(roomPath(roomCode)).data.status == 'lobby'
+            && getAfter(roomPath(roomCode)).data.status == 'playing'
+            && request.resource.data.isReady == false)
+          || (get(roomPath(roomCode)).data.status == 'playing'
+            && getAfter(roomPath(roomCode)).data.status == 'lobby'
+            && request.resource.data.isReady == false));
+    }
+
     function idleLobby(roomCode) {
       return schemaThreeRoom(roomCode)
         && get(roomPath(roomCode)).data.status == 'lobby'
@@ -97,10 +111,11 @@ service cloud.firestore {
     }
 
     function validPlayer(data) {
-      return data.keys().hasOnly(['name', 'coins', 'isDead', 'influenceCount', 'revealedCards'])
+      return data.keys().hasOnly(['name', 'coins', 'isDead', 'influenceCount', 'revealedCards', 'avatarId', 'isReady'])
         && data.name is string && data.name.size() > 0 && data.name.size() <= 24
         && data.coins == 2 && data.isDead == false && data.influenceCount == 2
-        && data.revealedCards is list && data.revealedCards.size() == 0;
+        && data.revealedCards is list && data.revealedCards.size() == 0
+        && data.avatarId in ['male', 'female'] && data.isReady == false;
     }
 
     function validCommand(data) {
@@ -206,7 +221,13 @@ service cloud.firestore {
         allow create: if signedIn() && playerUid == request.auth.uid
           && validPlayer(request.resource.data)
           && (roomCreatedByCaller(roomCode) || joiningCaller(roomCode));
-          allow update: if isHost(roomCode) && cleanupHasNotStarted(get(roomPath(roomCode)).data);
+        allow update: if hostPlayerUpdate(roomCode)
+          || (signedIn() && playerUid == request.auth.uid
+            && roomMember(roomCode)
+            && get(roomPath(roomCode)).data.status == 'lobby'
+            && cleanupHasNotStarted(get(roomPath(roomCode)).data)
+            && request.resource.data.isReady is bool
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isReady']));
         allow delete: if canClean(roomCode)
           || (roomMember(roomCode) && playerUid == request.auth.uid
             && get(roomPath(roomCode)).data.status == 'lobby')

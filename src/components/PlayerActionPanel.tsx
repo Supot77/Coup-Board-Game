@@ -2,19 +2,14 @@ import { useEffect, useState } from 'react';
 import Modal from './Modal';
 import HandGuide from './HandGuide';
 import RoleBadge from './RoleBadge';
+import PlayingCard from './PlayingCard';
+import GameIcon from './GameIcon';
 import { actionHelp as actions, getActionLabel, getLivingRoles, getPassConsequence } from '../core/gameHelp';
-
-const cardImages: Record<string, string> = {
-  Duke: '/img/duk.jpg', Assassin: '/img/ass.jpg', Captain: '/img/cap.jpg',
-  Ambassador: '/img/amb.jpg', Contessa: '/img/cont.jpg',
-};
 
 function Hand({ cards, small = false }: { cards: any[]; small?: boolean }) {
   return <div className={`influence-cards ${small ? 'small-hand' : ''}`}>
-    {cards?.map((card, index) => <div key={index} className={`influence-card ${card.isDead ? 'influence-dead' : ''}`}>
-      <img src={cardImages[card.character]} alt="" />
-      <span>{card.character}{card.isDead && <small>เปิดเผยแล้ว</small>}</span>
-    </div>)}
+    {cards?.map((card, index) => <PlayingCard key={index} role={card.character} revealed={card.isDead}
+      className={`influence-card ${card.isDead ? 'influence-dead' : ''}`} />)}
   </div>;
 }
 
@@ -113,18 +108,20 @@ export default function PlayerActionPanel(props: any) {
     : gameState === 'game_over' ? 'จบเกมแล้ว'
     : `รอ ${players.find(p => p.id === roomData.turnOrder?.[roomData.currentTurnIndex])?.name || 'ผู้เล่น'} ตัดสินใจ`;
 
-  return <div className={`player-action-panel ${showActionsOnly ? 'actions-only' : ''}`}>
+  const statusKind = isDead ? 'eliminated' : discarding || exchanging || waitingForMe ? 'attention' : canTakeTurn ? 'your-turn' : 'waiting';
+
+  return <div className={`player-action-panel ${showActionsOnly ? 'actions-only' : ''}`} data-status={statusKind}>
     <section className="game-panel influence-panel" aria-label="ไพ่ของฉัน">
-      <h2 className="panel-heading">ไพ่ของคุณ <span>🪙 {myPlayer?.coins}</span></h2>
-      <p className="turn-status" aria-live="polite">{status}</p>
+      <h2 className="panel-heading">ไพ่ของคุณ <span className="hand-coin-count">🪙 {myPlayer?.coins} เหรียญ</span></h2>
+      <p className="turn-status" aria-live="polite"><span className="turn-status-dot" aria-hidden="true" />{status}</p>
       {!responding && timeLeft !== null && !isDead && <p className="decision-clock">เวลาตัดสินใจ {timeLeft} วินาที</p>}
       <Hand cards={myPlayer?.cards} />
+      <p className="hand-influence-count">{myPlayer?.name} · อิทธิพลที่เหลือ {myPlayer?.cards?.filter(card => !card.isDead).length ?? 0}/2</p>
     </section>
 
     <section className="game-panel actions-panel" aria-label="แอคชั่น">
       <h2 className="panel-heading">แอคชั่น</h2>
       <p className="role-legend"><span><RoleBadge role="" owned /> มีบทบาทนี้</span><span><RoleBadge role="" owned={false} /> สวมบทบาท</span></p>
-      {!responding && <HandGuide roles={ownedRoles} isDead={!!isDead} />}
       <nav className="action-categories" aria-label="ประเภทแอคชั่น">
         {[
           ['general', 'ทั่วไป', actions.filter(a => a.role === 'ทั่วไป' && !reasonDisabled(a)).length],
@@ -158,7 +155,8 @@ export default function PlayerActionPanel(props: any) {
           key={index} type="button" aria-pressed={selectedAmbassadorCards.includes(index)}
           aria-label={`${card.character} ใบที่ ${index + 1}`} disabled={isProcessing}
           className={`exchange-card ${selectedAmbassadorCards.includes(index) ? 'card-selected' : ''}`} onClick={() => handleToggleExchangeCard(index)}>
-          <img src={cardImages[card.character]} alt="" /><span>{selectedAmbassadorCards.includes(index) && '✓ '}{card.character}</span>
+          <PlayingCard role={card.character} selected={selectedAmbassadorCards.includes(index)} className="exchange-card-visual" />
+          {selectedAmbassadorCards.includes(index) && <span className="exchange-selection-check" aria-hidden="true">✓</span>}
         </button>)}</div>
         <button className="action-choice" disabled={isProcessing || selectedAmbassadorCards.length !== myPlayer.cards.filter(c => !c.isDead).length} onClick={confirmExchange}>ยืนยันการสลับไพ่</button>
       </div> : <>
@@ -175,8 +173,9 @@ export default function PlayerActionPanel(props: any) {
             {myPlayer?.coins >= 10 && canTakeTurn && <p className="decision-clock">มี 10 เหรียญขึ้นไป ต้องเลือก Coup</p>}
             <div className="action-grid">{actions.filter(action => (action.role === 'ทั่วไป') === (category === 'general')).map(action => {
               const disabledReason = reasonDisabled(action);
-              return <button key={action.name} className="action-choice action-tile" disabled={!!disabledReason}
+              return <button key={action.name} className="action-choice action-tile" data-action={action.name} data-role={action.role} disabled={!!disabledReason}
                 onClick={() => handleActionClick(action.name)}>
+                <span className="action-symbol"><GameIcon kind={action.name} /></span>
                 <span className="action-role">{action.role}</span>
               <span className="action-title">{action.role !== 'ทั่วไป' && <RoleBadge role={action.role} owned={ownedRoles.has(action.role)} />}{action.label}</span>
                 <span>{action.description}</span>
@@ -189,9 +188,10 @@ export default function PlayerActionPanel(props: any) {
             </div>
           </>}
       </>}
+      {!responding && <HandGuide roles={ownedRoles} isDead={!!isDead} />}
     </section>
 
-    {responding && popupOpen && <Modal title={gameState === 'waiting_for_block_responses' ? 'มีการประกาศบล็อก' : 'มีการประกาศแอคชั่น'}
+    {responding && popupOpen && <Modal className="game-event-dialog" title={gameState === 'waiting_for_block_responses' ? 'มีการประกาศบล็อก' : 'มีการประกาศแอคชั่น'}
       onClose={() => setPopupOpen(false)}>{responseContent}<p className="muted-copy">ปิดเพื่อดูกระดานได้ แล้วกด “เปิดเหตุการณ์” เพื่อกลับมา · การปิดไม่ใช่การปล่อยผ่าน</p></Modal>}
   </div>;
 }

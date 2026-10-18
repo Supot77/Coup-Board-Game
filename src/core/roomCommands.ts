@@ -5,6 +5,7 @@ import {
 import { auth, db } from './firebase.ts';
 import { createInitialDeck, type Card, type PrivatePlayer, type PublicPlayer, type Role, type Room } from './gameEngine.ts';
 import { finishLobbyCleanup } from './roomMaintenance.ts';
+import type { PlayerAvatarId } from '../types';
 
 const ROOM_IDLE_MS = 30 * 60 * 1000;
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -38,8 +39,16 @@ function randomRoomCode() {
   return [...random].map(byte => ROOM_CODE_CHARS[Math.floor(byte * ROOM_CODE_CHARS.length / 256)]).join('');
 }
 
-function makePlayer(name: string): PublicPlayer {
-  return { name, coins: 2, isDead: false, influenceCount: 2, revealedCards: [] };
+function normalizeAvatarId(value: string): PlayerAvatarId {
+  if (value !== 'male' && value !== 'female') fail('invalid-argument', 'กรุณาเลือกตัวละครก่อนเข้าห้อง');
+  return value;
+}
+
+function makePlayer(name: string, avatarId?: PlayerAvatarId): PublicPlayer {
+  return {
+    name, coins: 2, isDead: false, influenceCount: 2, revealedCards: [], isReady: false,
+    ...(avatarId ? { avatarId } : {}),
+  };
 }
 
 function newCard(character: Role, id: string): Card {
@@ -48,9 +57,10 @@ function newCard(character: Role, id: string): Card {
 
 function idleExpiry(now: number) { return Timestamp.fromMillis(now + ROOM_IDLE_MS); }
 
-export async function createRoom(displayName: string, uid = currentUid(), database: Firestore = db) {
+export async function createRoom(displayName: string, avatarInput: string, uid = currentUid(), database: Firestore = db) {
   const actor = currentUid(uid);
   const name = normalizeName(displayName);
+  const avatarId = normalizeAvatarId(avatarInput);
   for (let attempt = 0; attempt < 12; attempt++) {
     const roomCode = randomRoomCode();
     const roomRef = doc(database, `rooms/${roomCode}`);
@@ -72,7 +82,7 @@ export async function createRoom(displayName: string, uid = currentUid(), databa
         };
         transaction.set(roomRef, room);
         transaction.set(inviteRef, { schemaVersion: 3, status: 'lobby', playerCount: 1 });
-        transaction.set(playerRef, makePlayer(name));
+        transaction.set(playerRef, makePlayer(name, avatarId));
         transaction.set(privateRef, { cards: [], exchangeOptions: [] } satisfies PrivatePlayer);
         transaction.set(internalRef, { deck: [] });
       });
@@ -85,10 +95,11 @@ export async function createRoom(displayName: string, uid = currentUid(), databa
   fail('resource-exhausted', 'สร้างรหัสห้องไม่สำเร็จ กรุณาลองใหม่');
 }
 
-export async function joinRoom(codeInput: string, displayName: string, uid = currentUid(), database: Firestore = db) {
+export async function joinRoom(codeInput: string, displayName: string, avatarInput: string, uid = currentUid(), database: Firestore = db) {
   const actor = currentUid(uid);
   const roomCode = normalizeRoomCode(codeInput);
   const name = normalizeName(displayName);
+  const avatarId = normalizeAvatarId(avatarInput);
   const inviteRef = doc(database, `roomInvites/${roomCode}`);
   const playerRef = doc(database, `rooms/${roomCode}/players/${actor}`);
   const privateRef = doc(database, `rooms/${roomCode}/privatePlayers/${actor}`);
@@ -103,13 +114,36 @@ export async function joinRoom(codeInput: string, displayName: string, uid = cur
     if (invite.playerCount >= 6) fail('resource-exhausted', 'ห้องเต็มแล้ว (สูงสุด 6 คน)');
     if (privateSnap.exists()) fail('failed-precondition', 'ข้อมูลผู้เล่นในห้องไม่สมบูรณ์');
     transaction.update(inviteRef, { playerCount: invite.playerCount + 1 });
-    transaction.set(playerRef, makePlayer(name));
+    transaction.set(playerRef, makePlayer(name, avatarId));
     transaction.set(privateRef, { cards: [], exchangeOptions: [] } satisfies PrivatePlayer);
     transaction.update(doc(database, `rooms/${roomCode}`), {
       lastActivityAt: serverTimestamp(), expiresAt: idleExpiry(Date.now()),
     });
   });
   return { roomCode };
+}
+
+export async function setPlayerReady(codeInput: string, isReady: boolean, uid = currentUid(), database: Firestore = db) {
+  const actor = currentUid(uid);
+  const roomCode = normalizeRoomCode(codeInput);
+  if (typeof isReady !== 'boolean') fail('invalid-argument', 'สถานะความพร้อมไม่ถูกต้อง');
+  const roomRef = doc(database, `rooms/${roomCode}`);
+  const inviteRef = doc(database, `roomInvites/${roomCode}`);
+  const playerRef = doc(database, `rooms/${roomCode}/players/${actor}`);
+  await runTransaction(database, async transaction => {
+    const [roomSnap, inviteSnap, playerSnap] = await Promise.all([
+      transaction.get(roomRef), transaction.get(inviteRef), transaction.get(playerRef),
+    ]);
+    if (!roomSnap.exists() || !inviteSnap.exists() || !playerSnap.exists()) {
+      fail('not-found', 'ไม่พบสมาชิกหรือห้องนี้');
+    }
+    const room = roomSnap.data() as Room;
+    if (room.schemaVersion !== 3 || room.status !== 'lobby' || room.cleanupStarted === true
+      || inviteSnap.data().status !== 'lobby') {
+      fail('failed-precondition', 'เปลี่ยนสถานะพร้อมได้เฉพาะตอนห้องอยู่ในล็อบบี้');
+    }
+    transaction.update(playerRef, { isReady });
+  });
 }
 
 export async function leaveRoom(codeInput: string, uid = currentUid(), database: Firestore = db) {
@@ -192,7 +226,8 @@ export async function startGame(codeInput: string, uid = currentUid(), database:
     ]);
     if (!roomSnap.exists() || !inviteSnap.exists()) fail('not-found', 'ไม่พบห้องนี้');
     const room = roomSnap.data() as Room;
-    if (room.schemaVersion !== 3 || room.status !== 'lobby' || room.adminId !== actor || room.cleanupStarted === true) {
+    if (room.schemaVersion !== 3 || room.status !== 'lobby' || room.adminId !== actor || room.cleanupStarted === true
+      || inviteSnap.data().status !== 'lobby') {
       fail('permission-denied', 'เฉพาะเจ้าของห้องเท่านั้นที่เริ่มเกมได้');
     }
     const ids = rosterSnap.docs.map(item => item.id);
@@ -200,6 +235,9 @@ export async function startGame(codeInput: string, uid = currentUid(), database:
     if (ids.length < 2 || ids.length > 6) fail('failed-precondition', 'เกมต้องมีผู้เล่น 2 ถึง 6 คน');
     const playerSnaps = await Promise.all(rosterSnap.docs.map(player => transaction.get(player.ref)));
     if (playerSnaps.some(snapshot => !snapshot.exists())) fail('aborted', 'รายชื่อผู้เล่นกำลังเปลี่ยน กรุณากดเริ่มเกมอีกครั้ง');
+    if (playerSnaps.some(snapshot => snapshot.data()?.isReady !== true)) {
+      fail('failed-precondition', 'ผู้เล่นทุกคนต้องกดพร้อมก่อนเริ่มเกม');
+    }
     const privateRefs = ids.map(id => doc(database, `rooms/${roomCode}/privatePlayers/${id}`));
     const privateSnaps = await Promise.all(privateRefs.map(reference => transaction.get(reference)));
     if (privateSnaps.some(snapshot => !snapshot.exists())) fail('failed-precondition', 'ข้อมูลไพ่ผู้เล่นไม่ครบ กรุณาออกแล้วเข้าห้องใหม่');
@@ -207,7 +245,7 @@ export async function startGame(codeInput: string, uid = currentUid(), database:
     ids.forEach((id, index) => {
       const player = playerSnaps[index].data() as PublicPlayer;
       const cards = [newCard(deck.pop()!, `${Date.now()}-${id}-0`), newCard(deck.pop()!, `${Date.now()}-${id}-1`)];
-      transaction.set(playerSnaps[index].ref, { ...player, coins: 2, isDead: false, influenceCount: 2, revealedCards: [] });
+      transaction.set(playerSnaps[index].ref, { ...player, coins: 2, isDead: false, influenceCount: 2, revealedCards: [], isReady: false });
       transaction.set(privateRefs[index], { cards, exchangeOptions: [] } satisfies PrivatePlayer);
     });
     const turnOrder = [...ids].sort(() => Math.random() - 0.5);
@@ -246,7 +284,8 @@ export async function resetGame(codeInput: string, uid = currentUid(), database:
     const privateSnaps = await Promise.all(privateRefs.map(reference => transaction.get(reference)));
     const now = Date.now();
     for (let index = 0; index < rosterSnap.docs.length; index++) {
-      transaction.set(playerSnaps[index].ref, makePlayer((playerSnaps[index].data() as PublicPlayer).name));
+      const existingPlayer = playerSnaps[index].data() as PublicPlayer;
+      transaction.set(playerSnaps[index].ref, makePlayer(existingPlayer.name, existingPlayer.avatarId));
       transaction.set(privateRefs[index], { cards: [], exchangeOptions: [] } satisfies PrivatePlayer);
     }
     transaction.set(internalRef, { deck: [] }, { merge: true });

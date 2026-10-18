@@ -7,20 +7,26 @@ const state: any = {
   pendingAction: null, discardTarget: null, afterDiscardState: null,
 };
 const publicPlayers: any[] = [
-  { id: 'player1', name: 'ผู้เล่นทดสอบชื่อยาวเพื่อดูการตัดบรรทัด', coins: scenario === 'coins10' ? 10 : 7, isDead: false, influenceCount: 2, revealedCards: [] },
-  { id: 'player2', name: 'คู่แข่งชื่อยาวมากABCDEFGHIJKLMNOPQRSTUVWXYZ', coins: 12, isDead: false, influenceCount: 1, revealedCards: [{ slot: 0, character: 'Ambassador' }] },
-  { id: 'player3', name: 'ผู้เล่นที่ตกรอบ', coins: 0, isDead: true, influenceCount: 0, revealedCards: [{ slot: 0, character: 'Ambassador' }, { slot: 1, character: 'Contessa' }] },
+  { id: 'player1', name: 'ผู้เล่นทดสอบชื่อยาวเพื่อดูการตัดบรรทัด', coins: scenario === 'coins10' ? 10 : 7, isDead: false, influenceCount: 2, revealedCards: [], avatarId: 'male', isReady: false },
+  { id: 'player2', name: 'คู่แข่งชื่อยาวมากABCDEFGHIJKLMNOPQRSTUVWXYZ', coins: 12, isDead: false, influenceCount: 1, revealedCards: [{ slot: 0, character: 'Ambassador' }], avatarId: 'female', isReady: false },
+  { id: 'player3', name: 'ผู้เล่นที่ตกรอบ', coins: 0, isDead: true, influenceCount: 0, revealedCards: [{ slot: 0, character: 'Ambassador' }, { slot: 1, character: 'Contessa' }], avatarId: 'male', isReady: false },
 ];
 const privateState: Record<string, any> = {
   player1: { cards: [card('Duke'), card('Ambassador')], exchangeOptions: [] },
   player2: { cards: [card('Ambassador', true), card('Captain')], exchangeOptions: [] },
   player3: { cards: [card('Ambassador', true), card('Contessa', true)], exchangeOptions: [] },
 };
-if (scenario === 'room') {
+if (['room', 'room-1', 'room-2', 'room-6', 'room-member'].includes(scenario ?? '')) {
   state.status = 'lobby';
-  ['player4', 'player5', 'player6'].forEach((id, index) => publicPlayers.push({
-    id, name: `ผู้เล่นทดสอบ ${index + 4}`, coins: 2, isDead: false, influenceCount: 2, revealedCards: [],
-  }));
+  if (scenario === 'room-1') publicPlayers.splice(1);
+  if (scenario === 'room-2') publicPlayers.splice(2);
+  if (scenario === 'room' || scenario === 'room-6') {
+    ['player4', 'player5', 'player6'].forEach((id, index) => publicPlayers.push({
+      id, name: `ผู้เล่นทดสอบ ${index + 4}`, coins: 2, isDead: false, influenceCount: 2, revealedCards: [],
+      avatarId: index % 2 === 0 ? 'female' : 'male', isReady: false,
+    }));
+  }
+  if (scenario === 'room-member') state.adminId = 'player2';
 }
 if (['response', 'foreignaid', 'block', 'assassination', 'tax', 'other-target', 'response-revealed'].includes(scenario ?? '')) {
   state.gameState = scenario === 'block' ? 'waiting_for_block_responses' : 'waiting_for_responses';
@@ -67,14 +73,42 @@ const setFixtureHand = (cards: any[]) => {
   publicPlayers[0].revealedCards = cards.flatMap((item, slot) => item.isDead ? [{ slot, character: item.character }] : []);
   emit();
 };
+const setFixtureReady = (isReady: boolean) => {
+  publicPlayers[0].isReady = isReady;
+  emit();
+};
+const setFixtureAllReady = (isReady: boolean) => {
+  publicPlayers.forEach(player => { player.isReady = isReady; });
+  emit();
+};
+const addFixturePlayer = () => {
+  const index = publicPlayers.length + 1;
+  publicPlayers.push({
+    id: `player${index}`, name: `ผู้เล่นทดสอบ ${index}`, coins: 2, isDead: false, influenceCount: 2,
+    revealedCards: [], avatarId: index % 2 === 0 ? 'female' : 'male', isReady: false,
+  });
+  emit();
+};
 Object.assign(globalThis, {
-  __coupUiFixture: { setHand: setFixtureHand },
+  __coupUiFixture: { setHand: setFixtureHand, setReady: setFixtureReady, setAllReady: setFixtureAllReady, addPlayer: addFixturePlayer },
   __coupUiCallable: async (name: string, payload: any = {}) => {
-    if (name === 'createRoom') return { roomCode: 'ABCDEFGH' };
-    if (name === 'joinRoom') return { roomCode: payload.roomCode };
+    if (name === 'createRoom') {
+      state.status = 'lobby'; state.adminId = 'player1'; publicPlayers.splice(1);
+      publicPlayers[0].avatarId = payload.avatarId; publicPlayers[0].isReady = false;
+      emit(); return { roomCode: 'ABCDEFGH' };
+    }
+    if (name === 'joinRoom') {
+      state.status = 'lobby'; publicPlayers[0].avatarId = payload.avatarId; emit();
+      return { roomCode: payload.roomCode };
+    }
+    if (name === 'setPlayerReady') { setFixtureReady(payload.isReady); return { updated: true }; }
     if (name === 'startGame') { state.status = 'playing'; state.gameState = 'waiting_for_action'; emit(); return { started: true }; }
     if (name === 'leaveRoom') { state.status = 'lobby'; emit(); return { left: true }; }
-    if (name === 'kickPlayer') return { removed: true };
+    if (name === 'kickPlayer') {
+      const index = publicPlayers.findIndex(player => player.id === payload.playerId);
+      if (index >= 0) publicPlayers.splice(index, 1);
+      emit(); return { removed: true };
+    }
     if (name === 'resetGame') { state.status = 'lobby'; state.gameState = 'lobby'; emit(); return { reset: true }; }
     if (name === 'submitGameCommand') {
       const command = payload.command;
