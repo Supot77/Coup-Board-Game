@@ -76,6 +76,7 @@ export async function finishLobbyCleanup(roomCode: string, uid?: string, databas
   await deletePages(database, `rooms/${roomCode}/privatePlayers`);
   await deletePages(database, `rooms/${roomCode}/commands`);
   await deletePages(database, `rooms/${roomCode}/commandResults`);
+  await deletePages(database, `rooms/${roomCode}/events`);
   await deletePages(database, `rooms/${roomCode}/internal`);
   await deletePages(database, `rooms/${roomCode}/cleanupMarkers`, actor);
 

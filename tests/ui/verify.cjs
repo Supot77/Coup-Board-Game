@@ -237,7 +237,10 @@ const base = process.env.UI_TEST_BASE || 'http://127.0.0.1:5197/tests/ui/index.h
   await page.screenshot({ path: path.join(output, 'exchange-390.png') });
   await open('discard');
   await page.getByRole('navigation', { name: 'เมนูเกม' }).getByRole('button', { name: 'แอคชั่น' }).click();
-  assert.equal(await page.getByRole('button', { name: /^เปิดเผย / }).count(), 2);
+  assert.equal(await page.getByRole('button', { name: /^เลือกเปิดเผย / }).count(), 2);
+  await page.getByRole('button', { name: 'เลือกเปิดเผย Duke', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.__coupUiFixture.submittedCommands.length), 0, 'selection does not discard');
+  assert(await page.getByRole('button', { name: 'ยืนยันเปิดเผย Duke', exact: true }).isEnabled());
   await fits();
   console.log('PASS discard and exchange selection');
 

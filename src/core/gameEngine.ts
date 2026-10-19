@@ -1,4 +1,5 @@
 import type { PlayerAvatarId } from '../types';
+import { responseDeadlineMillis } from './responseTiming.ts';
 
 export type Role = 'Duke' | 'Assassin' | 'Captain' | 'Ambassador' | 'Contessa';
 export type Card = { character: Role; isDead: boolean; id: string };
@@ -28,6 +29,8 @@ export type Room = Record<string, any> & {
   passVotes?: string[];
   pendingAction?: PendingAction | null;
   actionLog?: string;
+  responseStartedAt?: unknown;
+  responseTimeoutSeconds?: number;
 };
 export type Aggregate = {
   room: Room;
@@ -36,12 +39,13 @@ export type Aggregate = {
   deck: Role[];
   now: number;
 };
-export type Command =
+export type Command = (
   | { type: 'action'; actionName: string; targetId?: string }
-  | { type: 'respond'; response: 'pass' | 'challenge' | 'block'; character?: Role }
+  | { type: 'respond'; response: 'pass' | 'challenge' | 'block'; character?: Role; responseWindowId?: string }
+  | { type: 'expireResponses'; responseWindowId: string }
   | { type: 'discard'; cardIndex: number }
   | { type: 'exchange'; cardIndexes: number[] }
-  | { type: 'surrender' };
+  | { type: 'surrender' }) & { expectedRoundId?: string; expectedTurnNumber?: number };
 
 export class GameRuleError extends Error {
   public code: string;
@@ -74,12 +78,21 @@ function clearResponse(state: Aggregate) {
   state.room.discardTarget = null;
   state.room.afterDiscardState = null;
   state.room.afterDiscardPayload = null;
+  state.room.responseStartedAt = null;
+  state.room.responseWindowId = null;
+}
+function openResponseWindow(state: Aggregate) {
+  const sequence = (state.room.responseSequence ?? 0) + 1;
+  state.room.responseSequence = sequence;
+  state.room.responseWindowId = `${state.room.roundId ?? 'legacy'}:${sequence}`;
+  state.room.responseStartedAt = state.now;
 }
 function finishIfWon(state: Aggregate) {
   const alive = aliveIds(state);
   if (alive.length <= 1 && Object.keys(state.players).length > 1) {
     state.room.gameState = 'game_over';
     state.room.winner = alive[0] ?? null;
+    state.room.gameEndedAt = state.now;
     state.room.actionLog = alive[0]
       ? `${state.players[alive[0]].name} เป็นผู้ชนะ เหลืออิทธิพลเป็นคนสุดท้าย`
       : 'ไม่มีผู้เล่นเหลืออยู่ เกมจบแล้ว';
@@ -98,6 +111,7 @@ function endTurn(state: Aggregate, message: string) {
     if (living(state, order[next])) break;
   }
   state.room.currentTurnIndex = next;
+  state.room.turnNumber = (state.room.turnNumber ?? 1) + 1;
   state.room.gameState = 'waiting_for_action';
   state.room.actionLog = message;
   clearResponse(state);
@@ -110,6 +124,8 @@ function beginDiscard(state: Aggregate, uid: string, message: string, after: 'en
   state.room.afterDiscardPayload = payload;
   state.room.actionLog = message;
   state.room.passVotes = [];
+  state.room.responseStartedAt = null;
+  state.room.responseWindowId = null;
 }
 function loseInfluence(state: Aggregate, uid: string, cardIndex: number) {
   const cards = cardsOf(state, uid);
@@ -155,6 +171,8 @@ function resolveAction(state: Aggregate, pending: PendingAction) {
     options.push(...deck.splice(0, 2).map((character, index) => ({ character, isDead: false, id: `exchange-${state.now}-${index}` })));
     state.privatePlayers[pending.sourceId].exchangeOptions = options;
     state.room.gameState = 'waiting_for_exchange';
+    state.room.responseStartedAt = null;
+    state.room.responseWindowId = null;
     state.room.actionLog = `${source.name} ใช้ Exchange กำลังเลือกไพ่ที่จะเก็บ`;
     state.room.passVotes = [];
   } else {
@@ -174,11 +192,17 @@ function startResponses(state: Aggregate, action: PendingAction, message: string
   state.room.gameState = 'waiting_for_responses';
   state.room.passVotes = [];
   state.room.actionLog = message;
+  openResponseWindow(state);
 }
 function applyResponse(state: Aggregate, actor: string, command: Extract<Command, { type: 'respond' }>) {
   const phase = state.room.gameState;
   const blocking = phase === 'waiting_for_block_responses';
   if (phase !== 'waiting_for_responses' && !blocking) reject('failed-precondition', 'ตอนนี้ไม่มีเหตุการณ์ให้ตอบสนอง');
+  if (state.room.responseWindowId && command.responseWindowId !== state.room.responseWindowId) {
+    reject('failed-precondition', 'เหตุการณ์เปลี่ยนแล้ว กรุณาดูเหตุการณ์ล่าสุด');
+  }
+  const deadline = responseDeadlineMillis(state.room);
+  if (deadline !== null && state.now >= deadline) reject('failed-precondition', 'หมดเวลาตอบเหตุการณ์นี้แล้ว กำลังดำเนินเกมต่อ');
   const pending = state.room.pendingAction as PendingAction;
   const excluded = blocking ? pending.blockerId : pending.sourceId;
   if (actor === excluded || !living(state, actor)) reject('permission-denied', 'คุณไม่มีสิทธิ์ตอบสนองเหตุการณ์นี้');
@@ -205,6 +229,7 @@ function applyResponse(state: Aggregate, actor: string, command: Extract<Command
     state.room.gameState = 'waiting_for_block_responses';
     state.room.passVotes = [];
     state.room.actionLog = `${state.players[actor].name} อ้าง ${character} เพื่อบล็อกแอคชั่น`;
+    openResponseWindow(state);
     return;
   }
 
@@ -248,6 +273,7 @@ function applyAction(state: Aggregate, actor: string, command: Extract<Command, 
   if (player.coins >= 10 && actionName !== 'Coup') reject('failed-precondition', 'มี 10 เหรียญขึ้นไป ต้องเลือก Coup');
   if (actionName === 'Coup' && player.coins < 7) reject('failed-precondition', 'ต้องมีอย่างน้อย 7 เหรียญเพื่อใช้ Coup');
   if (actionName === 'Assassinate' && player.coins < 3) reject('failed-precondition', 'ต้องมีอย่างน้อย 3 เหรียญเพื่อใช้ Assassinate');
+  state.room.currentActionId = `${state.room.roundId ?? 'legacy'}:turn:${state.room.turnNumber ?? 1}`;
 
   if (actionName === 'Income') { player.coins += 1; endTurn(state, `${player.name} ใช้ Income ได้รับ 1 เหรียญ`); return; }
   if (actionName === 'Coup' || actionName === 'Assassinate' || actionName === 'Steal') {
@@ -266,8 +292,23 @@ function applyAction(state: Aggregate, actor: string, command: Extract<Command, 
 
 export function applyGameCommand(state: Aggregate, actor: string, command: Command): Aggregate {
   if (!state.players[actor]) reject('permission-denied', 'คุณไม่ได้อยู่ในห้องนี้');
+  if ((command.expectedRoundId && command.expectedRoundId !== state.room.roundId)
+    || (command.expectedTurnNumber !== undefined && command.expectedTurnNumber !== (state.room.turnNumber ?? 1))) {
+    reject('failed-precondition', 'รอบหรือตาเปลี่ยนแล้ว กรุณาเลือกจากสถานะล่าสุด');
+  }
   if (state.room.status !== 'playing' && command.type !== 'surrender') reject('failed-precondition', 'เกมยังไม่เริ่ม');
-  if (command.type === 'action') applyAction(state, actor, command);
+  if (command.type === 'expireResponses') {
+    if (actor !== state.room.adminId) reject('permission-denied', 'เฉพาะเจ้าของห้องดำเนินการหมดเวลาได้');
+    const blocking = state.room.gameState === 'waiting_for_block_responses';
+    if ((!blocking && state.room.gameState !== 'waiting_for_responses') || command.responseWindowId !== state.room.responseWindowId) {
+      reject('failed-precondition', 'เหตุการณ์เปลี่ยนแล้ว');
+    }
+    const deadline = responseDeadlineMillis(state.room);
+    if (deadline === null || state.now < deadline) reject('failed-precondition', 'ยังไม่หมดเวลาตอบโต้');
+    state.room.passVotes = activeResponderIds(state, blocking);
+    if (blocking) endTurn(state, 'หมดเวลาตอบโต้ ยอมรับการบล็อกและจบตา');
+    else resolveAction(state, state.room.pendingAction as PendingAction);
+  } else if (command.type === 'action') applyAction(state, actor, command);
   else if (command.type === 'respond') applyResponse(state, actor, command);
   else if (command.type === 'discard') {
     if (state.room.gameState !== 'waiting_for_discard' || state.room.discardTarget !== actor) reject('permission-denied', 'ตอนนี้คุณไม่มีไพ่ที่ต้องเปิดเผย');

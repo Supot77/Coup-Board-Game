@@ -18,7 +18,9 @@ function game({ turnOrder = ['a', 'b', 'c'], coins = { a: 2, b: 2, c: 2 }, hands
     players, privatePlayers, deck: ['Captain', 'Assassin', 'Ambassador', 'Contessa'], now: 1000,
   };
 }
-function run(state, actor, command) { return applyGameCommand(state, actor, command); }
+function run(state, actor, command) {
+  return applyGameCommand(state, actor, command.type === 'respond' ? { responseWindowId: state.room.responseWindowId, ...command } : command);
+}
 
 test('rejects a game action from the wrong turn', () => {
   assert.throws(() => run(game(), 'b', { type: 'action', actionName: 'Income' }), GameRuleError);

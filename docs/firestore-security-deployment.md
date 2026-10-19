@@ -94,3 +94,11 @@ The live site loads at [coup-49ffc.web.app](https://coup-49ffc.web.app). A tempo
 - Verified 31 HTTP resources returned 200 and matched the local build by SHA-256: HTML, all JS/CSS, all five role portraits, role-gesture strips, lobby scene, tabletop and avatars. Evidence: `output/fog-opening-release-2026-10-18/asset-manifest.json`; repeat with its sibling `verify-live.cjs`.
 - Before release: lint, TypeScript, build, session 6/6, engine 8/8 and the dedicated entrance suite passed. The entrance suite covers the normal sequence, host/member start, new rounds, stale cached cards, own-hand accuracy, failed start, urgent response interruption, skip/Escape, reduced motion and phone/tablet/desktop/landscape bounds. Full existing UI regression passed during implementation.
 - Hosting only; no Rules, schema, commands, Functions, Scheduler, indexes or billing changes. No live multiplayer room or physical-device testing was performed. The local Firebase deployment cache is excluded from the source commit.
+
+## Gameplay decisions, history and shared response timing release — 2026-10-19
+
+- Released the approved gameplay UX items 1–7; invitation links and QR (item 8) remain excluded. Includes response decisions, public table overview, confirmations, compact actions, optional sound, public round history/summary and persisted response windows with command recovery.
+- Deployed `firebase deploy --project coup-49ffc --only firestore:rules` first, then `firebase deploy --project coup-49ffc --only hosting`. Both exited 0. Rules compiled and released; Hosting finalized and released the matching 49-file build.
+- Verified 32 live HTTP resources returned 200 and matched the local build by SHA-256. Evidence: `output/gameplay-ux-release-2026-10-19/asset-manifest.json`; repeat with its sibling `verify-live.cjs`.
+- Release checks passed: lint, TypeScript, build, session 6/6 and engine 13/13. Implementation verification also passed Spark integration 10/10, Rules 9/9, the existing responsive UI suites and the new gameplay UX suite across phone, tablet, desktop and landscape sizes.
+- Only Rules and Hosting were deployed. No Functions, indexes, Realtime Database or billing changes. No live multiplayer room or physical-device test was performed. Spark timeout processing still depends on the creator's browser. Local Firebase cache is excluded from the source commit.

@@ -1,9 +1,12 @@
 import {
-  collection, doc, getDocs, onSnapshot, orderBy, query, runTransaction, serverTimestamp,
+  collection, doc, getDocs, onSnapshot, orderBy, query, runTransaction, serverTimestamp, updateDoc,
   type Firestore,
 } from 'firebase/firestore';
 import { db } from './firebase.ts';
 import { applyGameCommand, GameRuleError, type Aggregate, type PrivatePlayer, type PublicPlayer, type Room, type Role } from './gameEngine.ts';
+import { buildPublicGameEvent } from './gameEvents.ts';
+import { responseDeadlineMillis } from './responseTiming.ts';
+import { submitGameCommand } from './gameCommands.ts';
 
 function ruleMessage(error: unknown) {
   if (error instanceof GameRuleError) return error.message;
@@ -60,12 +63,24 @@ export async function processHostCommand(
       deck: (internalSnap.data().deck ?? []) as Role[],
       now: Date.now(),
     };
+    const before = { room: { ...room }, players: structuredClone(players) };
 
     try {
+      if (!aggregate.room.roundId) {
+        aggregate.room.roundId = `legacy-${aggregate.room.gameStartedAt ?? Date.now()}`;
+        aggregate.room.historyStartedMidRound = true;
+      }
       applyGameCommand(aggregate, actorUid, commandSnap.data().payload);
+      const event = buildPublicGameEvent(before, aggregate, actorUid, commandSnap.data().payload);
+      aggregate.room.eventSequence = event.sequence;
+      if (aggregate.room.responseWindowId && aggregate.room.responseWindowId !== before.room.responseWindowId) {
+        aggregate.room.responseStartedAt = serverTimestamp();
+      }
       aggregate.room.deckCount = aggregate.deck.length;
       aggregate.room.lastActivityAt = serverTimestamp();
+      aggregate.room.hostSeenAt = serverTimestamp();
       transaction.set(roomRef, aggregate.room);
+      transaction.set(doc(database, `rooms/${roomCode}/events/${commandId}`), { ...event, at: serverTimestamp() });
       transaction.set(internalRef, { deck: aggregate.deck }, { merge: true });
       for (const [index, uid] of uids.entries()) {
         transaction.set(playerSnaps[index].ref, aggregate.players[uid]);
@@ -93,6 +108,9 @@ export function watchHostCommands(
   const commandsQuery = query(commandsRef, orderBy('createdAt', 'asc'));
   const running = new Set<string>();
   let active = true;
+  let latestRoom: Room | null = null;
+  let expiringWindow: string | null = null;
+  let maintaining = false;
   const reportError = (error: unknown) => { if (active) onError(error); };
   const unsubscribe = onSnapshot(commandsQuery, snapshot => {
     if (!active) return;
@@ -104,5 +122,48 @@ export function watchHostCommands(
         .finally(() => running.delete(command.id));
     }
   }, reportError);
-  return () => { active = false; unsubscribe(); };
+  const roomRef = doc(database, `rooms/${roomCode}`);
+  const maintain = async () => {
+    if (!active || maintaining || !latestRoom || latestRoom.status !== 'playing' || latestRoom.gameState === 'game_over'
+      || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
+    maintaining = true;
+    try {
+      const responding = ['waiting_for_responses', 'waiting_for_block_responses'].includes(latestRoom.gameState);
+      if (responding && (!latestRoom.responseWindowId || responseDeadlineMillis(latestRoom) === null)) {
+        // Upgrade an existing in-flight room once; a reload never renews a stamped window.
+        await runTransaction(database, async transaction => {
+          const snapshot = await transaction.get(roomRef);
+          if (!snapshot.exists()) return;
+          const current = snapshot.data();
+          if (current.adminId !== hostUid || current.status !== 'playing'
+            || !['waiting_for_responses', 'waiting_for_block_responses'].includes(current.gameState)
+            || (current.responseWindowId && responseDeadlineMillis(current) !== null)) return;
+          const sequence = (current.responseSequence ?? 0) + 1;
+          transaction.update(roomRef, { responseSequence: sequence, responseWindowId: `${current.roundId ?? 'legacy'}:${sequence}`, responseStartedAt: serverTimestamp() });
+        });
+      } else if (responding) {
+        const deadline = responseDeadlineMillis(latestRoom);
+        if (deadline !== null && Date.now() >= deadline && expiringWindow !== latestRoom.responseWindowId) {
+          const windowId = latestRoom.responseWindowId as string;
+          expiringWindow = windowId;
+          try { await submitGameCommand(roomCode, hostUid, { type: 'expireResponses', responseWindowId: windowId }, database); }
+          catch (error) { expiringWindow = null; throw error; }
+        }
+      }
+    } catch (error) { reportError(error); }
+    finally { maintaining = false; }
+  };
+  const unsubscribeRoom = onSnapshot(roomRef, { includeMetadataChanges: true }, snapshot => {
+    if (!active || snapshot.metadata.hasPendingWrites || snapshot.metadata.fromCache) return;
+    latestRoom = snapshot.exists() ? snapshot.data() as Room : null;
+    void maintain();
+  }, reportError);
+  const expiryTimer = setInterval(() => { void maintain(); }, 1000);
+  const heartbeat = setInterval(() => {
+    if (active && latestRoom?.status === 'playing' && latestRoom.gameState !== 'game_over'
+      && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+      void updateDoc(roomRef, { hostSeenAt: serverTimestamp() }).catch(reportError);
+    }
+  }, 20_000);
+  return () => { active = false; unsubscribe(); unsubscribeRoom(); clearInterval(expiryTimer); clearInterval(heartbeat); };
 }

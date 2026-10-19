@@ -6,7 +6,9 @@ import { DialogProvider } from '../../src/components/DialogProvider';
 import { SessionProvider } from './session';
 import '../../src/index.css';
 
+const preferences = ['coup_action_density', 'coup_sound_enabled', 'coup_sound_volume'].map(key => [key, localStorage.getItem(key)]);
 localStorage.clear();
+for (const [key, value] of preferences) if (key && value !== null) localStorage.setItem(key, value);
 if (new URLSearchParams(location.search).get('scenario') !== 'login') {
   localStorage.setItem('coup_session_token', 'player1');
   localStorage.setItem('coup_player_name', 'ผู้เล่นทดสอบ');

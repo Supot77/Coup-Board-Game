@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../core/firebase';
 import { useDialog } from './DialogProvider';
 import { useSession } from './SessionProvider';
@@ -13,8 +13,12 @@ import ActionLog from './ActionLog.jsx';
 import PlayerActionPanel from './PlayerActionPanel.jsx';
 import GameIcon from './GameIcon';
 import { isRoomAccessLost, ROOM_UNAVAILABLE_MESSAGE } from '../core/roomAccess';
-import { getResponseTimeoutSeconds } from '../core/responseTiming';
+import { getResponseSecondsLeft, timestampMillis } from '../core/responseTiming';
+import type { PublicGameEvent } from '../core/gameEvents';
+import TableOverview from './TableOverview';
+import GameFeedback from './GameFeedback';
 import LoadingScreen from './LoadingScreen';
+import '../styles/gameplay.css';
 
 const formatGameTime = (totalSeconds: number) => {
   const mins = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
@@ -36,10 +40,17 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules, op
   const [targetAction, setTargetAction] = useState<string | null>(null);
   const [selectedAmbassadorCards, setSelectedAmbassadorCards] = useState<number[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
-  const [actionToConfirm, setActionToConfirm] = useState<string | null>(null);
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
+  const [events, setEvents] = useState<PublicGameEvent[]>([]);
+  const [historyError, setHistoryError] = useState('');
+  const [eventsConfirmed, setEventsConfirmed] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [fromCache, setFromCache] = useState(false);
+  const [wallNow, setWallNow] = useState(Date.now);
+  const [commandStage, setCommandStage] = useState<'sending' | 'received' | null>(null);
+  const [queuedAt, setQueuedAt] = useState(0);
+  const commandBusy = useRef(false);
   const [historyLog, setHistoryLog] = useState<{ raw: string; text: string }[]>([]);
-  const [gameTime, setGameTime] = useState(0);
   const [activeMobileTab, setActiveMobileTab] = useState('board');
   const [victoryOpen, setVictoryOpen] = useState(true);
   const [turnNoticeOpen, setTurnNoticeOpen] = useState(false);
@@ -67,6 +78,7 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules, op
     const unsubRoom = onSnapshot(roomRef, { includeMetadataChanges: true }, snapshot => {
       if (!active) return;
       const fromCache = snapshot.metadata?.fromCache;
+      setFromCache(fromCache === true);
       if (!snapshot.exists()) {
         if (fromCache) return;
         forgetRoom();
@@ -104,15 +116,35 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules, op
   }, [roomCode, roomData?.status, roomData?.adminId, user.token, notify]);
 
   useEffect(() => {
-    if (!roomData?.gameStartedAt || roomData?.gameState === 'game_over') {
-      setGameTime(0);
-      return;
-    }
-    const tick = () => setGameTime(Math.max(0, Math.floor((Date.now() - roomData.gameStartedAt) / 1000)));
-    tick();
-    const timer = window.setInterval(tick, 1000);
-    return () => window.clearInterval(timer);
-  }, [roomData?.gameStartedAt, roomData?.gameState]);
+    const timer = window.setInterval(() => setWallNow(Date.now()), 1000);
+    const updateOnline = () => { setOnline(navigator.onLine); setWallNow(Date.now()); };
+    window.addEventListener('online', updateOnline); window.addEventListener('offline', updateOnline);
+    return () => { window.clearInterval(timer); window.removeEventListener('online', updateOnline); window.removeEventListener('offline', updateOnline); };
+  }, []);
+
+  useEffect(() => {
+    setEvents([]); setEventsConfirmed(false); setHistoryError('');
+    if (!roomData?.roundId) return;
+    const roundId = roomData.roundId;
+    return onSnapshot(query(collection(db, `rooms/${roomCode}/events`), where('roundId', '==', roundId)), { includeMetadataChanges: true }, snapshot => {
+      setEvents(snapshot.docs.map(event => ({ id: event.id, ...event.data() }) as PublicGameEvent).sort((a, b) => a.sequence - b.sequence));
+      setEventsConfirmed(snapshot.metadata?.fromCache !== true && snapshot.metadata?.hasPendingWrites !== true);
+      setHistoryError('');
+    }, error => setHistoryError(getCallableMessage(error)));
+  }, [roomCode, roomData?.roundId]);
+
+  useEffect(() => {
+    let active = true;
+    const key = `coup_pending_${roomCode}_${user.token}`;
+    const commandId = sessionStorage.getItem(key);
+    if (!commandId) return;
+    commandBusy.current = true; setIsProcessing(true); setCommandStage('received'); setQueuedAt(Date.now());
+    void waitForCommandResult(roomCode, commandId, user.token).catch(error => { if (active) notify(getCallableMessage(error)); }).finally(() => {
+      sessionStorage.removeItem(key);
+      if (active) { commandBusy.current = false; setIsProcessing(false); setCommandStage(null); }
+    });
+    return () => { active = false; };
+  }, [roomCode, user.token, notify]);
 
   const basePlayer = players.find(player => player.id === user.token);
   const myPlayer = basePlayer ? { ...basePlayer, cards: privateCards } : undefined;
@@ -120,7 +152,8 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules, op
   const alivePlayers = players.filter(player => !player.isDead);
   const gameState = roomData?.gameState;
   const isMyTurn = roomData?.turnOrder?.[roomData?.currentTurnIndex] === user.token;
-  const responseTimeoutSeconds = getResponseTimeoutSeconds(roomData?.responseTimeoutSeconds);
+  const timeLeft = roomData ? getResponseSecondsLeft(roomData, wallNow) : null;
+  const gameTime = roomData?.gameStartedAt ? Math.max(0, Math.floor(((roomData.gameEndedAt ?? wallNow) - roomData.gameStartedAt) / 1000)) : 0;
   const myActionTurn = isMyTurn && gameState === 'waiting_for_action' && !!basePlayer && !basePlayer.isDead;
   const responding = gameState === 'waiting_for_responses' || gameState === 'waiting_for_block_responses';
   const myResponsePassed = roomData?.passVotes?.includes(user.token);
@@ -161,55 +194,52 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules, op
   }, [turnNoticeOpen]);
 
   const runCommand = useCallback(async (command: GameCommand): Promise<boolean> => {
-    setIsProcessing(true);
+    if (commandBusy.current) return false;
+    commandBusy.current = true; setIsProcessing(true); setCommandStage('sending');
+    const key = `coup_pending_${roomCode}_${user.token}`;
     try {
-      const { commandId } = await submitGameCommand(roomCode, user.token, command);
+      const contextualCommand = { ...command, ...(roomData?.roundId ? { expectedRoundId: roomData.roundId } : {}),
+        ...(roomData?.turnNumber ? { expectedTurnNumber: roomData.turnNumber } : {}) };
+      const { commandId } = await submitGameCommand(roomCode, user.token, contextualCommand, db, id => sessionStorage.setItem(key, id));
+      sessionStorage.setItem(key, commandId);
+      setCommandStage('received'); setQueuedAt(Date.now());
       await waitForCommandResult(roomCode, commandId, user.token);
       return true;
     } catch (error) {
       notify(getCallableMessage(error));
       return false;
-    } finally { setIsProcessing(false); }
-  }, [roomCode, user.token, notify]);
+    } finally {
+      sessionStorage.removeItem(key); commandBusy.current = false; setIsProcessing(false); setCommandStage(null);
+    }
+  }, [roomCode, user.token, notify, roomData?.roundId, roomData?.turnNumber]);
 
-  const handleVotePass = useCallback(() => runCommand({ type: 'respond', response: 'pass' }), [runCommand]);
-
+  const responseCommand = (response: 'pass' | 'challenge' | 'block', character?: string): GameCommand => ({
+    type: 'respond', response, ...(character ? { character } : {}),
+    ...(roomData?.responseWindowId ? { responseWindowId: roomData.responseWindowId } : {}),
+  });
+  const handleVotePass = () => runCommand(responseCommand('pass'));
+  useEffect(() => { setTargetAction(null); setSelectedTargetId(null); }, [roomData?.roundId, roomData?.turnNumber]);
   useEffect(() => {
-    if (!waitingForMe || isProcessing) { setTimeLeft(null); return; }
-    setTimeLeft(responseTimeoutSeconds);
-    const deadline = Date.now() + responseTimeoutSeconds * 1000;
-    let submitted = false;
-    const timer = window.setInterval(() => {
-      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
-      setTimeLeft(remaining);
-      if (remaining === 0 && !submitted) {
-        submitted = true;
-        window.clearInterval(timer);
-        void handleVotePass();
-      }
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [waitingForMe, gameState, roomData?.pendingAction?.blockerId, responseTimeoutSeconds, isProcessing, handleVotePass]);
+    if (!myActionTurn) { setTargetAction(null); setSelectedTargetId(null); }
+    if (gameState !== 'waiting_for_exchange') setSelectedAmbassadorCards([]);
+  }, [myActionTurn, gameState]);
 
   const performAction = async (actionName: string) => {
     if (['Assassinate', 'Steal', 'Coup'].includes(actionName)) {
-      setTargetAction(actionName);
-      return;
+      setSelectedTargetId(null); setTargetAction(actionName); return;
     }
     await runCommand({ type: 'action', actionName });
   };
-  const handleActionClick = (actionName: string) => {
-    if (['Assassinate', 'Coup'].includes(actionName)) setActionToConfirm(actionName);
-    else void performAction(actionName);
+  const handleActionClick = (actionName: string) => { void performAction(actionName); };
+  const handleTargetSelect = (targetId: string | null) => setSelectedTargetId(targetId);
+  const confirmTargetAction = async () => {
+    if (!targetAction || !selectedTargetId || !myActionTurn || !players.some(player => player.id === selectedTargetId && !player.isDead)) return;
+    if (await runCommand({ type: 'action', actionName: targetAction, targetId: selectedTargetId })) {
+      setTargetAction(null); setSelectedTargetId(null);
+    }
   };
-  const handleTargetSelect = async (targetId: string) => {
-    if (!targetAction) return;
-    const actionName = targetAction;
-    setTargetAction(null);
-    await runCommand({ type: 'action', actionName, targetId });
-  };
-  const handleChallenge = () => runCommand({ type: 'respond', response: 'challenge' });
-  const handleBlock = (character: string) => runCommand({ type: 'respond', response: 'block', character });
+  const handleChallenge = () => runCommand(responseCommand('challenge'));
+  const handleBlock = (character: string) => runCommand(responseCommand('block', character));
   const submitDiscard = (cardIndex: number) => runCommand({ type: 'discard', cardIndex });
   const handleToggleExchangeCard = (index: number) => {
     const required = privateCards.filter(card => !card.isDead).length;
@@ -231,19 +261,23 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules, op
   };
   const handleSurrender = async () => {
     if (!await confirm('ต้องการยอมแพ้และออกจากเกมหรือไม่?')) return;
-    setIsProcessing(true);
-    try {
-      const { commandId } = await submitGameCommand(roomCode, user.token, { type: 'surrender' });
-      await waitForCommandResult(roomCode, commandId, user.token);
+    if (await runCommand({ type: 'surrender' })) {
       localStorage.removeItem('coup_current_room');
       onLeaveGame();
-    } catch (error) { notify(getCallableMessage(error)); setIsProcessing(false); }
-    finally { setIsProcessing(false); }
+    }
   };
 
   if (!roomData || !myPlayer) return <LoadingScreen message="กำลังโหลดข้อมูลห้อง" />;
   const roomForUi: RoomData = { ...roomData, drawnCards: undefined, exchangeOptions };
   const canRespond = !myPlayer.isDead && waitingForMe;
+  const hostSeenAt = timestampMillis(roomData.hostSeenAt);
+  const waitingHost = commandStage === 'received' && wallNow - queuedAt >= 5000;
+  const connectionMessage = !online ? 'การเชื่อมต่อขาด · เชื่อมต่ออินเทอร์เน็ตเพื่อดำเนินเกมต่อ'
+    : fromCache ? 'กำลังซิงค์ข้อมูลห้อง · ข้อมูลที่เห็นอาจยังไม่ใช่สถานะล่าสุด'
+    : commandStage === 'sending' ? 'กำลังส่งคำสั่ง…'
+    : waitingHost ? 'รับคำสั่งแล้ว · กำลังรออุปกรณ์เจ้าของห้อง ไม่ต้องกดส่งซ้ำ'
+    : commandStage === 'received' ? 'รับคำสั่งแล้ว · กำลังประมวลผล'
+    : hostSeenAt !== null && wallNow - hostSeenAt > 45_000 && gameState !== 'game_over' ? 'ยังไม่ได้รับสัญญาณล่าสุดจากเจ้าของห้อง · เกมอาจรอการเชื่อมต่อ' : '';
 
   return (
     <div className="gameboard-bg game-shell">
@@ -259,17 +293,19 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules, op
         <div className="game-header-info">
           <div className="game-room-label"><span>ห้อง</span><strong>{roomCode}</strong></div>
           <div className="game-header-stats">
-            {roomData.gameStartedAt && <span className="game-stat" aria-label={`เวลาเล่น ${formatGameTime(gameTime)}`}><GameIcon kind="clock" /><span className="game-stat-label">เวลาเล่น</span><strong>{formatGameTime(gameTime)}</strong></span>}
+            {roomData.gameStartedAt && (gameState !== 'game_over' || roomData.gameEndedAt) && <span className="game-stat" aria-label={`เวลาเล่น ${formatGameTime(gameTime)}`}><GameIcon kind="clock" /><span className="game-stat-label">เวลาเล่น</span><strong>{formatGameTime(gameTime)}</strong></span>}
             <span className="game-stat" aria-label={`ไพ่กองกลาง ${roomData.deckCount ?? 0} ใบ`}><GameIcon kind="cards" /><span className="game-stat-label">กองกลาง</span><strong>{roomData.deckCount ?? 0}</strong></span>
           </div>
         </div>
         <nav className="game-header-controls" aria-label="จัดการเกม">
+          <GameFeedback events={events} roundId={roomData.roundId} live={online && !fromCache && eventsConfirmed} myTurn={myActionTurn} />
           <button aria-label="เปิดกติกา" className="game-rules-button" onClick={onShowRules}><GameIcon kind="book" /><span>กติกา</span></button>
           {roomData.adminId === user.token && <button aria-label="ยุติเกม" disabled={isProcessing} onClick={handleAdminReset}><GameIcon kind="reset" /><span>ยุติเกม</span></button>}
           <button aria-label="ออกจากเกม" disabled={isProcessing} onClick={handleSurrender}><GameIcon kind="exit" /><span>ออก</span></button>
         </nav>
       </header>
 
+      <TableOverview players={players} room={roomForUi} viewerUid={user.token} />
       <nav className="mobile-tabs" aria-label="เมนูเกม">
         {[
           ['board', 'ไพ่ของฉัน', false],
@@ -279,8 +315,8 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules, op
           {label}{available && <span className="action-ready">พร้อม</span>}
         </button>)}
       </nav>
-      {isProcessing && roomData.adminId !== user.token && <div className="event-banner mx-3 mt-2" role="status">
-        คำสั่งกำลังรอเจ้าของห้องออนไลน์เพื่อดำเนินการ
+      {connectionMessage && <div className="connection-status" role="status" data-offline={!online}>
+        <span className="connection-dot" aria-hidden="true" />{connectionMessage}
       </div>}
       {gameState === 'game_over' && <div className="event-banner mx-3 mt-2">
         <span>จบเกม · ผู้ชนะ {alivePlayers[0]?.name}</span>
@@ -293,19 +329,19 @@ export default function GameBoard({ roomCode, user, onLeaveGame, onShowRules, op
         <div className={`game-column game-column-main ${['board', 'actions'].includes(activeMobileTab) ? 'mobile-visible' : ''}`}>
           <PlayerActionPanel
             gameState={gameState} isMyTurn={isMyTurn} myPlayer={myPlayer} players={players} roomData={roomForUi} userToken={user.token}
-            timeLeft={timeLeft} actionToConfirm={actionToConfirm} targetAction={targetAction} isProcessing={isProcessing}
+            timeLeft={responding ? timeLeft : null} selectedTargetId={selectedTargetId} confirmTargetAction={confirmTargetAction} targetAction={targetAction} isProcessing={isProcessing}
             selectedAmbassadorCards={selectedAmbassadorCards} performAction={performAction} handleActionClick={handleActionClick}
-            handleTargetSelect={handleTargetSelect} setTargetAction={setTargetAction} setActionToConfirm={setActionToConfirm}
+            handleTargetSelect={handleTargetSelect} setTargetAction={setTargetAction}
             handleVotePass={handleVotePass} handleChallenge={handleChallenge} handleBlock={handleBlock} submitDiscard={submitDiscard}
             handleToggleExchangeCard={handleToggleExchangeCard} confirmExchange={confirmExchange}
             gameTime={gameTime} showActionsOnly={activeMobileTab === 'actions'}
           />
         </div>
         <div className={`game-column game-column-log desktop-column ${activeMobileTab === 'log' ? 'mobile-visible' : ''}`}>
-          <ActionLog historyLog={historyLog} gameState={gameState} alivePlayers={alivePlayers} roomData={roomForUi} />
+          <ActionLog historyLog={historyLog} events={events} players={players} error={historyError} gameState={gameState} alivePlayers={alivePlayers} roomData={roomForUi} />
         </div>
       </div>
-      {gameState === 'game_over' && victoryOpen && <VictoryScreen winnerName={alivePlayers[0]?.name} isAdmin={roomData.adminId === user.token} onAdminReset={handleAdminReset} onClose={() => setVictoryOpen(false)} />}
+      {gameState === 'game_over' && victoryOpen && <VictoryScreen events={events} room={roomData} winnerName={alivePlayers[0]?.name} isAdmin={roomData.adminId === user.token} onAdminReset={handleAdminReset} onClose={() => setVictoryOpen(false)} />}
     </div>
   );
 }

@@ -128,7 +128,23 @@ service cloud.firestore {
         && data.actorUid == request.auth.uid
         && data.createdAt == request.time
         && data.payload is map
-        && data.payload.type in ['action', 'respond', 'discard', 'exchange', 'surrender'];
+        && data.payload.type in ['action', 'respond', 'discard', 'exchange', 'surrender', 'expireResponses'];
+    }
+
+    function validCoinChange(data) {
+      return data is map && data.keys().hasOnly(['playerId', 'playerName', 'before', 'after'])
+        && data.playerId is string && data.playerName is string && data.before is int && data.after is int;
+    }
+    function validInfluenceChange(data) {
+      return data is map && data.keys().hasOnly(['playerId', 'playerName', 'before', 'after', 'revealed'])
+        && data.playerId is string && data.playerName is string && data.before is int && data.after is int
+        && data.revealed is list && data.revealed.size() <= 2
+        && data.revealed.hasOnly(['Duke', 'Assassin', 'Captain', 'Ambassador', 'Contessa']);
+    }
+    function validEventChanges(coins, influence) {
+      return coins is list && coins.size() <= 2 && influence is list && influence.size() <= 1
+        && (coins.size() < 1 || validCoinChange(coins[0])) && (coins.size() < 2 || validCoinChange(coins[1]))
+        && (influence.size() < 1 || validInfluenceChange(influence[0]));
     }
 
     match /roomInvites/{roomCode} {
@@ -276,7 +292,9 @@ service cloud.firestore {
         allow create: if roomMember(roomCode)
           && get(roomPath(roomCode)).data.status == 'playing'
             && cleanupHasNotStarted(get(roomPath(roomCode)).data)
-          && validCommand(request.resource.data);
+          && validCommand(request.resource.data)
+          && (request.resource.data.payload.type != 'expireResponses'
+            || (isHost(roomCode) && request.resource.data.payload.responseWindowId is string));
         allow update: if false;
         allow delete: if isHost(roomCode) || canClean(roomCode);
       }
@@ -301,6 +319,33 @@ service cloud.firestore {
           && request.resource.data.completedAt == request.time;
         allow update: if false;
         allow delete: if isHost(roomCode) || canClean(roomCode);
+      }
+
+      match /events/{eventId} {
+        allow read: if roomAccess(roomCode);
+        allow create: if isHost(roomCode) && cleanupHasNotStarted(get(roomPath(roomCode)).data)
+          && request.resource.data.keys().hasOnly(['roundId', 'sequence', 'turnNumber', 'actionId', 'kind',
+            'actorId', 'actorName', 'sourceId', 'targetId', 'targetName', 'actionName', 'claimedRole',
+            'challengeSucceeded', 'outcome', 'at', 'coinChanges', 'influenceChanges'])
+          && request.resource.data.roundId == getAfter(roomPath(roomCode)).data.roundId
+          && request.resource.data.roundId is string
+          && request.resource.data.sequence == getAfter(roomPath(roomCode)).data.eventSequence
+          && request.resource.data.sequence is int && request.resource.data.sequence > 0
+          && request.resource.data.turnNumber is int && request.resource.data.turnNumber > 0
+          && request.resource.data.actionId is string
+          && request.resource.data.kind in ['start', 'action', 'pass', 'block', 'challenge', 'discard', 'exchange', 'surrender', 'timeout']
+          && request.resource.data.actorId is string && request.resource.data.actorName is string
+          && (request.resource.data.sourceId == null || request.resource.data.sourceId is string)
+          && (request.resource.data.targetId == null || request.resource.data.targetId is string)
+          && (request.resource.data.targetName == null || request.resource.data.targetName is string)
+          && (request.resource.data.actionName == null || request.resource.data.actionName in ['Income', 'ForeignAid', 'Coup', 'Tax', 'Assassinate', 'Steal', 'Exchange'])
+          && (request.resource.data.claimedRole == null || request.resource.data.claimedRole in ['Duke', 'Assassin', 'Captain', 'Ambassador', 'Contessa'])
+          && (request.resource.data.challengeSucceeded == null || request.resource.data.challengeSucceeded is bool)
+          && request.resource.data.outcome is string && request.resource.data.outcome.size() <= 2000
+          && request.resource.data.at == request.time
+          && validEventChanges(request.resource.data.coinChanges, request.resource.data.influenceChanges);
+        allow update: if false;
+        allow delete: if canClean(roomCode);
       }
 
       match /cleanupMarkers/{uid} {

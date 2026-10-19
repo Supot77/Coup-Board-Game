@@ -2,12 +2,13 @@ import { collection, doc, onSnapshot, serverTimestamp, setDoc, type Firestore } 
 import { auth, db } from './firebase.ts';
 import { normalizeRoomCode } from './roomCommands.ts';
 
-export type GameCommand =
+export type GameCommand = (
   | { type: 'action'; actionName: string; targetId?: string }
-  | { type: 'respond'; response: 'pass' | 'challenge' | 'block'; character?: string }
+  | { type: 'respond'; response: 'pass' | 'challenge' | 'block'; character?: string; responseWindowId?: string }
+  | { type: 'expireResponses'; responseWindowId: string }
   | { type: 'discard'; cardIndex: number }
   | { type: 'exchange'; cardIndexes: number[] }
-  | { type: 'surrender' };
+  | { type: 'surrender' }) & { expectedRoundId?: string; expectedTurnNumber?: number };
 
 function currentUid(uid?: string) {
   const value = uid ?? auth.currentUser?.uid;
@@ -20,10 +21,12 @@ export async function submitGameCommand(
   actorUid: string,
   command: GameCommand,
   database: Firestore = db,
+  onAssigned?: (commandId: string) => void,
 ) {
   const roomCode = normalizeRoomCode(codeInput);
   const uid = currentUid(actorUid);
   const commandRef = doc(collection(database, `rooms/${roomCode}/commands`));
+  onAssigned?.(commandRef.id);
   await setDoc(commandRef, { actorUid: uid, payload: command, createdAt: serverTimestamp() });
   return { commandId: commandRef.id };
 }

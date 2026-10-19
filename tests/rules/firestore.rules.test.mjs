@@ -202,3 +202,29 @@ test('stale lobby members can mark cleanup and finish deletion in a separate bat
   await assertSucceeds(cleanup.commit());
   await assertFails(getDoc(doc(guest, 'rooms/STALELBB')));
 });
+
+
+test('public events are member-readable, host-created, immutable and reject private payload fields', async () => {
+  await env.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'rooms/EVENTLOG'), { schemaVersion: 3, status: 'playing', adminId: 'host', cleanupStarted: false, roundId: 'round-1', eventSequence: 1 });
+    for (const id of ['host', 'guest']) await setDoc(doc(db, `rooms/EVENTLOG/players/${id}`), { name: id });
+  });
+  const host = env.authenticatedContext('host').firestore();
+  const guest = env.authenticatedContext('guest').firestore();
+  const outsider = env.authenticatedContext('outsider').firestore();
+  const payload = { roundId: 'round-1', sequence: 1, turnNumber: 1, actionId: '', kind: 'action', actorId: 'host', actorName: 'Host', sourceId: 'host', targetId: null, targetName: null, actionName: 'Income', claimedRole: null, challengeSucceeded: null,
+    outcome: 'Host receives one coin', at: serverTimestamp(), coinChanges: [{ playerId: 'host', playerName: 'Host', before: 2, after: 3 }], influenceChanges: [] };
+  await assertSucceeds(setDoc(doc(host, 'rooms/EVENTLOG/events/event-1'), payload));
+  await assertSucceeds(setDoc(doc(host, 'rooms/EVENTLOG/events/transfer'), { ...payload, actionName: 'Steal',
+    coinChanges: [{ playerId: 'host', playerName: 'Host', before: 2, after: 4 }, { playerId: 'guest', playerName: 'Guest', before: 2, after: 0 }] }));
+  await assertSucceeds(setDoc(doc(host, 'rooms/EVENTLOG/events/reveal'), { ...payload, actionName: 'Assassinate', coinChanges: [],
+    influenceChanges: [{ playerId: 'guest', playerName: 'Guest', before: 2, after: 1, revealed: ['Duke'] }] }));
+  await assertSucceeds(getDocs(collection(guest, 'rooms/EVENTLOG/events')));
+  await assertFails(getDocs(collection(outsider, 'rooms/EVENTLOG/events')));
+  await assertFails(setDoc(doc(guest, 'rooms/EVENTLOG/events/forged'), payload));
+  await assertFails(updateDoc(doc(host, 'rooms/EVENTLOG/events/event-1'), { outcome: 'replacement' }));
+  await assertFails(setDoc(doc(host, 'rooms/EVENTLOG/events/private'), { ...payload, cards: ['Duke'] }));
+  await assertFails(setDoc(doc(host, 'rooms/EVENTLOG/events/private-nested'), { ...payload, coinChanges: [{ playerId: 'host', playerName: 'Host', before: 2, after: 3, cards: ['Duke'] }] }));
+  await assertFails(setDoc(doc(guest, 'rooms/EVENTLOG/commands/expire'), { actorUid: 'guest', createdAt: serverTimestamp(), payload: { type: 'expireResponses', responseWindowId: 'round-1:1' } }));
+});

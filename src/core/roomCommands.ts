@@ -243,6 +243,7 @@ export async function startGame(codeInput: string, uid = currentUid(), database:
   const rosterRef = collection(database, `rooms/${roomCode}/players`);
   const internalRef = doc(database, `rooms/${roomCode}/internal/state`);
   const rosterSnap = await getDocs(rosterRef);
+  const roundRef = doc(collection(database, `rooms/${roomCode}/events`));
   await runTransaction(database, async transaction => {
     const [roomSnap, inviteSnap, internalSnap] = await Promise.all([
       transaction.get(roomRef), transaction.get(inviteRef), transaction.get(internalRef),
@@ -277,7 +278,16 @@ export async function startGame(codeInput: string, uid = currentUid(), database:
       status: 'playing', gameState: 'waiting_for_action', deckCount: deck.length,
       turnOrder, currentTurnIndex: 0, passVotes: [], pendingAction: null,
       discardTarget: null, afterDiscardState: null, afterDiscardPayload: null,
-      gameStartedAt: Date.now(), lastActivityAt: serverTimestamp(), actionLog: 'เกมเริ่มแล้ว ผู้เล่นที่ถึงตาเลือกแอคชั่นได้',
+      gameStartedAt: Date.now(), gameEndedAt: null, lastActivityAt: serverTimestamp(), hostSeenAt: serverTimestamp(),
+      roundId: roundRef.id, eventSequence: 1, turnNumber: 1, historyStartedMidRound: false,
+      responseSequence: 0, responseStartedAt: null, responseWindowId: null, currentActionId: null,
+      actionLog: 'เกมเริ่มแล้ว ผู้เล่นที่ถึงตาเลือกแอคชั่นได้',
+    });
+    transaction.set(roundRef, {
+      roundId: roundRef.id, sequence: 1, turnNumber: 1, actionId: '', kind: 'start',
+      actorId: actor, actorName: playerSnaps.find(snapshot => snapshot.id === actor)?.data()?.name ?? 'เจ้าของห้อง',
+      sourceId: null, targetId: null, targetName: null, actionName: null, claimedRole: null, challengeSucceeded: null,
+      outcome: 'เกมเริ่มแล้ว ผู้เล่นที่ถึงตาเลือกแอคชั่นได้', at: serverTimestamp(), coinChanges: [], influenceChanges: [],
     });
     transaction.update(inviteRef, { status: 'playing' });
     if (!internalSnap.exists()) fail('failed-precondition', 'ไม่พบข้อมูลกองไพ่ของห้อง');
@@ -317,6 +327,8 @@ export async function resetGame(codeInput: string, uid = currentUid(), database:
       pendingAction: null, passVotes: [], discardTarget: null, afterDiscardState: null,
       afterDiscardPayload: null, ignoreBlock: false, gameStartedAt: null, winner: null,
       deckCount: 0, actionLog: 'รอเริ่มเกมใหม่', cleanupStarted: false,
+      roundId: null, eventSequence: 0, turnNumber: 0, gameEndedAt: null, currentActionId: null,
+      responseSequence: 0, responseStartedAt: null, responseWindowId: null,
       lastActivityAt: serverTimestamp(), expiresAt: idleExpiry(now),
     });
     transaction.update(inviteRef, { status: 'lobby' });

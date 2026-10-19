@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
 export type CardRole = 'Duke' | 'Assassin' | 'Captain' | 'Ambassador' | 'Contessa';
 
@@ -33,12 +33,23 @@ export default function PlayingCard({
   selected = false,
   className = '',
 }: PlayingCardProps) {
+  const wasRevealed = useRef(revealed);
+  const [freshReveal, setFreshReveal] = useState(false);
+  useEffect(() => {
+    const changed = revealed && !wasRevealed.current;
+    wasRevealed.current = revealed;
+    if (!changed) return;
+    setFreshReveal(true);
+    const timer = window.setTimeout(() => setFreshReveal(false), 500);
+    return () => window.clearTimeout(timer);
+  }, [revealed]);
   const validRole = role && role in roleArtwork ? role as CardRole : undefined;
   const stateClass = [
     'playing-card',
     faceDown || !validRole ? 'playing-card-back' : 'playing-card-front',
     revealed ? 'playing-card-revealed' : '',
     selected ? 'playing-card-selected' : '',
+    freshReveal ? 'card-reveal-new' : '',
     className,
   ].filter(Boolean).join(' ');
 

@@ -1,7 +1,9 @@
+import { buildPublicGameEvent } from '../../src/core/gameEvents';
 const scenario = new URLSearchParams(location.search).get('scenario');
 const card = (character: string, isDead = false) => ({ character, isDead });
 const state: any = {
-  schemaVersion: 2, status: 'playing', adminId: 'player1', gameState: 'waiting_for_action',
+  roundId: 'fixture-round', eventSequence: 1, turnNumber: 1, hostSeenAt: Date.now(), responseSequence: 0,
+  schemaVersion: 3, status: 'playing', adminId: 'player1', gameState: 'waiting_for_action',
   turnOrder: ['player1', 'player2', 'player3'], currentTurnIndex: scenario === 'waiting' ? 1 : 0,
   gameStartedAt: Date.now(), deckCount: 2, passVotes: [], actionLog: 'ทดสอบเลย์เอาท์ด้วยข้อมูลจำลอง',
   pendingAction: null, discardTarget: null, afterDiscardState: null,
@@ -9,6 +11,9 @@ const state: any = {
 const configuredSeconds = new URLSearchParams(location.search).get('responseSeconds');
 if (configuredSeconds !== null) state.responseTimeoutSeconds = Number(configuredSeconds);
 const submittedCommands: any[] = [];
+const publicEvents: any[] = [];
+let resultDelayMs = 0;
+let submitDelayMs = 0;
 let privateHandCached = false;
 const publicPlayers: any[] = [
   { id: 'player1', name: 'ผู้เล่นทดสอบชื่อยาวเพื่อดูการตัดบรรทัด', coins: scenario === 'coins10' ? 10 : 7, isDead: false, influenceCount: 2, revealedCards: [], avatarId: 'male', isReady: false },
@@ -65,6 +70,39 @@ if (scenario === 'dead') {
 }
 if (scenario === 'gameover') state.gameState = 'game_over';
 
+
+if (state.status === 'playing') {
+  publicEvents.push({ id: 'start', roundId: state.roundId, sequence: 1, turnNumber: 1, actionId: '', kind: 'start', actorId: 'player1', actorName: publicPlayers[0].name,
+    sourceId: null, targetId: null, targetName: null, actionName: null, claimedRole: null, challengeSucceeded: null,
+    outcome: 'เกมเริ่มแล้ว', at: state.gameStartedAt, coinChanges: [], influenceChanges: [] });
+}
+const openFixtureWindow = () => {
+  state.responseSequence += 1;
+  state.responseWindowId = `fixture:${state.responseSequence}`;
+  state.responseStartedAt = Date.now();
+};
+if (['waiting_for_responses', 'waiting_for_block_responses'].includes(state.gameState)) {
+  openFixtureWindow();
+  if (new URLSearchParams(location.search).get('persistClock') === '1') {
+    const key = `fixture_clock_${scenario}`;
+    state.responseStartedAt = Number(sessionStorage.getItem(key) ?? state.responseStartedAt);
+    sessionStorage.setItem(key, String(state.responseStartedAt));
+  }
+}
+if (scenario === 'history' || scenario === 'gameover') {
+  state.gameStartedAt = Date.now() - 125000;
+  publicEvents[0].at = state.gameStartedAt;
+  publicEvents.push({ ...publicEvents[0], id: 'tax-event', sequence: 2, kind: 'action', turnNumber: 3,
+    actorId: 'player2', actorName: publicPlayers[1].name, sourceId: 'player2', actionName: 'Tax', claimedRole: 'Duke',
+    outcome: 'เมย์ใช้ Tax ได้รับ 3 เหรียญ', at: state.gameStartedAt + 30000,
+    coinChanges: [{ playerId: 'player2', playerName: 'เมย์', before: 9, after: 12 }] });
+  publicEvents.push({ ...publicEvents[0], id: 'challenge-event', sequence: 3, kind: 'challenge', turnNumber: 5,
+    actorId: 'player1', actorName: publicPlayers[0].name, sourceId: 'player2', actionName: 'Steal', claimedRole: 'Captain', challengeSucceeded: true,
+    outcome: 'คุณจับโกหกสำเร็จ อีกฝ่ายต้องเปิดเผยไพ่ 1 ใบ', at: state.gameStartedAt + 90000 });
+  state.eventSequence = 3; state.turnNumber = 5;
+  if (scenario === 'gameover') state.gameEndedAt = Date.now();
+}
+
 let streamError: string | null = scenario === 'room-stale' ? 'permission-denied' : null;
 let leaveError: string | null = null;
 let missingRoom = false;
@@ -101,9 +139,17 @@ const addFixturePlayer = () => {
 };
 Object.assign(globalThis, {
   __coupUiFixture: {
-    submittedCommands,
+    submittedCommands, publicEvents,
+    setCommandDelays: (submit: number, result: number) => { submitDelayMs = submit; resultDelayMs = result; },
+    setResponseStart: (at: number) => { state.responseStartedAt = at;
+      if (new URLSearchParams(location.search).get('persistClock') === '1') sessionStorage.setItem(`fixture_clock_${scenario}`, String(at));
+      emit(); },
+    setHostSeen: (at: number) => { state.hostSeenAt = at; emit(); },
+    setTurnOrder: (ids: string[]) => { state.turnOrder = ids; emit(); },
+    addPublicEvent: (event: any) => { state.eventSequence += 1; publicEvents.push({ ...publicEvents[0], ...event, id: `event-${state.eventSequence}`, sequence: state.eventSequence, at: Date.now() }); emit(); },
     setPrivateCache: (cached: boolean) => { privateHandCached = cached; emit(); },
     setEvent: (actionName: string, blockCharacter: string | null = null) => {
+      openFixtureWindow();
       state.gameState = blockCharacter ? 'waiting_for_block_responses' : 'waiting_for_responses';
       state.passVotes = [];
       state.pendingAction = { actionName, sourceId: 'player2', targetId: ['Steal', 'Assassinate'].includes(actionName) ? 'player1' : null,
@@ -111,7 +157,7 @@ Object.assign(globalThis, {
       emit();
     },
     setResponseTime: (seconds: number) => { state.responseTimeoutSeconds = seconds; emit(); },
-    setTurn: (index: number) => { state.gameState = 'waiting_for_action'; state.currentTurnIndex = index; emit(); },
+    setTurn: (index: number) => { state.gameState = 'waiting_for_action'; state.currentTurnIndex = index; state.responseStartedAt = null; state.responseWindowId = null; emit(); },
     passOther: () => { state.passVotes = ['player3']; emit(); },
     failLeave: (code: string) => { leaveError = code; },
     failRoom: (code: string) => { streamError = code; emit(); },
@@ -140,7 +186,10 @@ Object.assign(globalThis, {
       emit(); return { removed: true };
     }
     if (name === 'resetGame') { state.status = 'lobby'; state.gameState = 'lobby'; emit(); return { reset: true }; }
+    if (name === 'waitForCommandResult') { if (resultDelayMs) await new Promise(resolve => setTimeout(resolve, resultDelayMs)); return { actorUid: 'player1', ok: true }; }
     if (name === 'submitGameCommand') {
+      if (submitDelayMs) await new Promise(resolve => setTimeout(resolve, submitDelayMs));
+      const before = { room: structuredClone(state), players: Object.fromEntries(publicPlayers.map(player => [player.id, structuredClone(player)])) };
       const command = payload.command;
       submittedCommands.push(command);
       if (command.type === 'action') {
@@ -149,6 +198,7 @@ Object.assign(globalThis, {
           state.actionLog = 'ผู้เล่นทดสอบใช้ Income ได้รับ 1 เหรียญ';
         } else {
           state.gameState = 'waiting_for_responses';
+          openFixtureWindow();
           state.pendingAction = { actionName: command.actionName, sourceId: 'player1', targetId: command.targetId ?? null, blockerId: null, blockCharacter: null };
           state.passVotes = [];
         }
@@ -156,6 +206,7 @@ Object.assign(globalThis, {
         state.passVotes = [...new Set([...state.passVotes, 'player1'])];
       } else if (command.type === 'respond' && command.response === 'block') {
         state.gameState = 'waiting_for_block_responses';
+        openFixtureWindow();
         state.pendingAction = { ...state.pendingAction, blockerId: 'player1', blockCharacter: command.character };
       } else if (command.type === 'discard') {
         const target = privateState.player1.cards[command.cardIndex];
@@ -166,6 +217,8 @@ Object.assign(globalThis, {
         privateState.player1.exchangeOptions = [];
         state.gameState = 'waiting_for_action';
       }
+      const event = buildPublicGameEvent(before, { room: state, players: Object.fromEntries(publicPlayers.map(player => [player.id, player])) }, 'player1', command);
+      state.eventSequence = event.sequence; publicEvents.push({ ...event, id: `command-${event.sequence}`, at: Date.now() });
       emit();
       return { commandId: 'fixture-command' };
     }
@@ -175,6 +228,7 @@ Object.assign(globalThis, {
 
 const listenersFor = (ref: any) => {
   const notify = () => {
+    if (ref.path.endsWith('/events')) { const docs = publicEvents.filter(event => !ref.constraints?.length || ref.constraints.every((filter: any) => event[filter.field] === filter.value)).map(event => snapshot(event.id, event)); return { docs, size: docs.length, metadata: { fromCache: cachedMissing } }; }
     if (ref.path.endsWith('/players')) return playerSnapshot();
     if (ref.path.includes('/privatePlayers/')) return { ...snapshot(ref.path.split('/').pop(), privateState[ref.path.split('/').pop()]), metadata: { fromCache: privateHandCached } };
     return { ...snapshot('TEST', missingRoom ? null : { ...state }), metadata: { fromCache: cachedMissing } };
@@ -189,6 +243,8 @@ const playerSnapshot = () => {
 export const getFirestore = () => ({});
 export const doc = (_db: any, ...parts: string[]) => ({ path: parts.join('/') });
 export const collection = doc;
+export const where = (field: string, _op: string, value: unknown) => ({ field, value });
+export const query = (ref: any, ...constraints: any[]) => ({ ...ref, constraints });
 export function onSnapshot(ref: any, optionsOrNext: any, nextOrError?: any, errorCallback?: any) {
   const next = typeof optionsOrNext === 'function' ? optionsOrNext : nextOrError;
   const error = typeof optionsOrNext === 'function' ? nextOrError : errorCallback;

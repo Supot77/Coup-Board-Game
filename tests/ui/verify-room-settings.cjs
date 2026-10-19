@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const output = 'output/room-settings-2026-10-18';
+const output = 'output/gameplay-ux-2026-10-19/room-settings';
 fs.mkdirSync(output, { recursive: true });
 const { chromium } = require(process.argv[2] || 'playwright');
 const base = process.env.UI_TEST_BASE || 'http://127.0.0.1:5294/tests/ui/index.html';
@@ -39,7 +39,9 @@ const base = process.env.UI_TEST_BASE || 'http://127.0.0.1:5294/tests/ui/index.h
     await page.evaluate(() => window.__coupUiFixture.passOther());
     assert((await remaining()) <= before, 'other votes do not reset the timer');
     await page.clock.runFor((seconds + 1) * 1000);
-    assert.equal(await page.evaluate(() => window.__coupUiFixture.submittedCommands.filter(c => c.type === 'respond' && c.response === 'pass').length), 1);
+    assert.equal(await page.evaluate(() => window.__coupUiFixture.submittedCommands.filter(c => c.type === 'respond' && c.response === 'pass').length), 0, 'viewer countdown never submits a fresh pass; host owns expiry');
+    assert.match(await clock.innerText(), /หมดเวลา/);
+    assert(await page.getByRole('button', { name: 'ปล่อยผ่าน', exact: true }).isDisabled());
   }
   await page.goto(`${base}?scenario=waiting`);
   await page.locator('.game-shell').waitFor();
@@ -72,5 +74,5 @@ const base = process.env.UI_TEST_BASE || 'http://127.0.0.1:5294/tests/ui/index.h
   }
   assert.deepEqual(errors, []);
   await browser.close();
-  console.log('PASS room timing: owner/member, responsive 320/390/1440, configured/fallback countdowns, no vote reset, auto-pass once; turn notification once per turn, action shortcut, auto-dismiss and reduced motion');
+  console.log('PASS room timing: owner/member, responsive 320/390/1440, shared configured/fallback countdowns, no vote reset or viewer auto-pass; turn notices and reduced motion');
 })().catch(error => { console.error(error); process.exit(1); });

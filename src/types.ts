@@ -37,6 +37,15 @@ export interface GameState {
 }
 
 export interface RoomData {
+  roundId?: string;
+  turnNumber?: number;
+  responseWindowId?: string;
+  responseStartedAt?: unknown;
+  pendingAction?: { actionName: string; sourceId: string; targetId?: string | null; blockerId?: string | null; blockCharacter?: string | null } | null;
+  passVotes?: string[];
+  discardTarget?: string | null;
+  gameStartedAt?: number;
+  gameEndedAt?: number | null;
   responseTimeoutSeconds?: number;
   id?: string;
   name?: string;

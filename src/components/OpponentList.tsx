@@ -8,7 +8,7 @@ export default function OpponentList({ players, userToken, roomData }: {
   return <section className="players-panel game-panel" aria-label="ผู้เล่น">
     <h2 className="panel-heading">ผู้เล่น <span>{players.length}</span></h2>
     <div className="opponents-grid">
-      {players.map(player => {
+      {[...players].sort((a, b) => (roomData.turnOrder?.indexOf(a.id) ?? 0) - (roomData.turnOrder?.indexOf(b.id) ?? 0)).map(player => {
         const isActive = roomData?.turnOrder?.[roomData?.currentTurnIndex] === player.id;
         const cards = player.cards ?? (() => {
           const revealed = player.revealedCards ?? [];

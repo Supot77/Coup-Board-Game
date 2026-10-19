@@ -3,12 +3,94 @@ import assert from 'node:assert/strict';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
 import {
-  connectFirestoreEmulator, collection, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, Timestamp,
+  connectFirestoreEmulator, collection, deleteField, doc, getDoc, getDocs, getFirestore, setDoc, updateDoc, Timestamp,
 } from 'firebase/firestore';
 import { createRoom, joinRoom, leaveRoom, kickPlayer, startGame, resetGame, setPlayerReady, setResponseTimeout } from '../../src/core/roomCommands.ts';
 import { submitGameCommand, waitForCommandResult } from '../../src/core/gameCommands.ts';
-import { processHostCommand } from '../../src/core/hostCommandProcessor.ts';
+import { processHostCommand, watchHostCommands } from '../../src/core/hostCommandProcessor.ts';
 import { markIdleLobbyForCleanup, ROOM_IDLE_LIMIT_MS } from '../../src/core/roomMaintenance.ts';
+
+test('round history is shared, immutable and idempotent; response windows expire through the host', async () => {
+  const code = (await createRoom('History host', 'male', host.uid, host.db)).roomCode;
+  await joinRoom(code, 'History guest', 'female', guest.uid, guest.db);
+  await setPlayerReady(code, true, host.uid, host.db);
+  await setPlayerReady(code, true, guest.uid, guest.db);
+  await startGame(code, host.uid, host.db);
+  const roomRef = doc(host.db, `rooms/${code}`);
+  const initial = (await getDoc(roomRef)).data();
+  const eventCollection = collection(guest.db, `rooms/${code}/events`);
+  assert.equal((await getDocs(eventCollection)).size, 1);
+  await updateDoc(roomRef, { turnOrder: [host.uid, guest.uid], currentTurnIndex: 0 });
+  const { commandId } = await submitGameCommand(code, host.uid, { type: 'action', actionName: 'Tax' }, host.db);
+  await processHostCommand(code, commandId, host.uid, host.db);
+  const responding = (await getDoc(roomRef)).data();
+  assert.equal(typeof responding.responseStartedAt.toMillis(), 'number');
+  assert.equal(typeof responding.responseWindowId, 'string');
+  await processHostCommand(code, commandId, host.uid, host.db);
+  assert.equal((await getDocs(eventCollection)).size, 2);
+  const eventRef = doc(guest.db, `rooms/${code}/events/${commandId}`);
+  const event = (await getDoc(eventRef)).data();
+  assert.equal(event.actionName, 'Tax');
+  for (const key of ['privatePlayers', 'cards', 'exchangeOptions', 'deck']) assert.equal(JSON.stringify(event).includes(`"${key}"`), false);
+  await assert.rejects(updateDoc(eventRef, { outcome: 'forged' }));
+  await assert.rejects(getDocs(collection(outsider.db, `rooms/${code}/events`)));
+  await assert.rejects(submitGameCommand(code, guest.uid, { type: 'expireResponses', responseWindowId: responding.responseWindowId }, guest.db));
+  const stale = await submitGameCommand(code, guest.uid, { type: 'respond', response: 'pass', responseWindowId: 'old-window' }, guest.db);
+  await processHostCommand(code, stale.commandId, host.uid, host.db);
+  assert.equal((await getDoc(doc(guest.db, `rooms/${code}/commandResults/${stale.commandId}`))).data().ok, false);
+  await updateDoc(roomRef, { responseStartedAt: Timestamp.fromMillis(Date.now() - 16000) });
+  const expiry = await submitGameCommand(code, host.uid, { type: 'expireResponses', responseWindowId: responding.responseWindowId }, host.db);
+  await processHostCommand(code, expiry.commandId, host.uid, host.db);
+  await processHostCommand(code, expiry.commandId, host.uid, host.db);
+  assert.equal((await getDoc(doc(host.db, `rooms/${code}/players/${host.uid}`))).data().coins, 5);
+  assert.equal((await getDocs(eventCollection)).size, 3);
+  assert.equal((await getDoc(roomRef)).data().responseStartedAt, null);
+  await resetGame(code, host.uid, host.db);
+  await setPlayerReady(code, true, host.uid, host.db);
+  await setPlayerReady(code, true, guest.uid, guest.db);
+  await startGame(code, host.uid, host.db);
+  assert.notEqual((await getDoc(roomRef)).data().roundId, initial.roundId);
+});
+
+test('an online host resolves elapsed windows automatically and preserves legacy migration on reconnect', async () => {
+  const code = (await createRoom('Clock host', 'male', host.uid, host.db)).roomCode;
+  await joinRoom(code, 'Clock guest', 'female', guest.uid, guest.db);
+  for (const client of [host, guest]) await setPlayerReady(code, true, client.uid, client.db);
+  await startGame(code, host.uid, host.db);
+  const roomRef = doc(host.db, `rooms/${code}`);
+  await updateDoc(roomRef, { turnOrder: [host.uid, guest.uid], currentTurnIndex: 0 });
+  const action = await submitGameCommand(code, host.uid, { type: 'action', actionName: 'Tax' }, host.db);
+  await processHostCommand(code, action.commandId, host.uid, host.db);
+  await updateDoc(roomRef, { responseStartedAt: Timestamp.fromMillis(Date.now() - 16000) });
+  const errors = [];
+  const until = async predicate => {
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      const data = (await getDoc(roomRef)).data();
+      if (predicate(data)) return data;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.fail('host response watcher did not settle');
+  };
+  let stop = watchHostCommands(code, host.uid, error => errors.push(error), host.db);
+  try {
+    await until(room => room.gameState === 'waiting_for_action');
+    assert.equal((await getDoc(doc(host.db, `rooms/${code}/players/${host.uid}`))).data().coins, 5);
+    stop();
+    await updateDoc(roomRef, { gameState: 'waiting_for_responses', passVotes: [],
+      pendingAction: { actionName: 'Tax', sourceId: guest.uid, targetId: null, blockerId: null, blockCharacter: null },
+      responseStartedAt: deleteField(), responseWindowId: deleteField() });
+    stop = watchHostCommands(code, host.uid, error => errors.push(error), host.db);
+    const migrated = await until(room => typeof room.responseWindowId === 'string' && room.responseStartedAt?.toMillis);
+    stop();
+    stop = watchHostCommands(code, host.uid, error => errors.push(error), host.db);
+    await new Promise(resolve => setTimeout(resolve, 250));
+    const restored = (await getDoc(roomRef)).data();
+    assert.equal(restored.responseWindowId, migrated.responseWindowId);
+    assert.equal(restored.responseStartedAt.toMillis(), migrated.responseStartedAt.toMillis());
+    assert.deepEqual(errors, []);
+  } finally { stop(); }
+});
 
 const projectId = 'demo-coup';
 const clients = new Map();

@@ -1441,3 +1441,6 @@ button:active:not(:disabled) { transform: translateY(1px); }
   .game-header-info .game-header-stats { flex-wrap: nowrap; gap: 12px; margin: 0; order: 0; }
   .game-header-info .game-stat { white-space: nowrap; }
 }
+
+/* Shared touch targets also apply before the lazy game board is loaded. */
+.lobby-room-page button { min-width: 44px; min-height: 44px; }
